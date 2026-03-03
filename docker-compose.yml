@@ -54,7 +54,11 @@ services:
     volumes:
       - ./backend:/app
     command: >
-      sh -c "echo 'Celery worker placeholder — activated in Phase 3' && sleep infinity"
+      celery -A app.simulation.worker:celery_app worker
+      --loglevel=info
+      --concurrency=1
+      -B
+      --schedule=/tmp/celerybeat-schedule
 
 volumes:
   pgdata:

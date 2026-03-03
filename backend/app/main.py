@@ -9,7 +9,9 @@ from sqlalchemy import select
 
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
+from app.api.intents import router as intents_router
 from app.api.players import router as players_router
+from app.api.simulation import router as simulation_router
 from app.config import settings
 from app.database import get_session_factory
 from app.models.treasury import AccountType, SystemAccount
@@ -109,6 +111,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(players_router)
+    app.include_router(intents_router)
+    app.include_router(simulation_router)
 
     return app
 

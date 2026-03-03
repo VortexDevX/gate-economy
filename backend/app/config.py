@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     initial_seed_micro: int = 100_000_000_000  # 100,000 currency in micro-units
     starting_balance_micro: int = 10_000_000    # 10 currency in micro-units
 
+    # ── Simulation ──
+    simulation_initial_seed: int = 42
+    simulation_tick_interval: int = 5  # seconds between ticks
+
+    # ── Celery ──
+    celery_broker_url: str = "redis://redis:6379/0"
+
     # ── CORS ──
     cors_origins: list[str] = ["http://localhost:5173"]
 

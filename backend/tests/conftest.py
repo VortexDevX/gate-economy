@@ -1,7 +1,10 @@
+import asyncio
+import uuid
 from collections.abc import AsyncGenerator
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from redis.asyncio import Redis as RedisClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -9,6 +12,7 @@ from sqlalchemy.pool import NullPool
 from app.config import settings
 from app.core.deps import get_db
 from app.main import app
+from app.models.player import Player
 from app.models.treasury import AccountType, SystemAccount
 
 
@@ -37,6 +41,9 @@ async def _ensure_treasury(factory) -> None:
             await session.commit()
 
 
+# ── Existing fixtures ──
+
+
 @pytest_asyncio.fixture
 async def db() -> AsyncGenerator[AsyncSession, None]:
     """Self-contained DB session for service-level tests."""
@@ -62,9 +69,70 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 
     app.dependency_overrides[get_db] = _override_get_db
     async with AsyncClient(
-        transport=ASGITransport(app=app),
+        transport=ASGITransport(app=app), # type: ignore
         base_url="http://test",
     ) as ac:
         yield ac
     app.dependency_overrides.clear()
     await engine.dispose()
+
+
+# ── Phase 3 fixtures ──
+
+
+@pytest_asyncio.fixture
+async def session_factory():
+    """Session factory for direct simulation/service testing."""
+    engine = _make_engine()
+    factory = _make_factory(engine)
+    await _ensure_treasury(factory)
+    yield factory
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def redis_client():
+    """Redis client for lock/cache tests."""
+    client = RedisClient.from_url(settings.redis_url, decode_responses=True)
+    yield client
+    await client.aclose()
+
+
+@pytest_asyncio.fixture
+async def pause_simulation(redis_client):
+    """Hold the simulation lock to prevent the worker from running ticks."""
+    from app.simulation.lock import LOCK_KEY
+
+    for _ in range(20):
+        result = await redis_client.set(
+            LOCK_KEY, "test-runner", nx=True, ex=300
+        )
+        if result:
+            break
+        await asyncio.sleep(0.5)
+    else:
+        await redis_client.set(LOCK_KEY, "test-runner", ex=300)
+    yield
+    await redis_client.delete(LOCK_KEY)
+
+
+@pytest_asyncio.fixture
+async def test_player_id(session_factory) -> uuid.UUID:
+    """Create a disposable test player with zero balance.
+
+    Balance is 0 because this player is not created through
+    the registration flow — no treasury debit occurs.
+    Giving it a nonzero balance would violate conservation.
+    """
+    async with session_factory() as session:
+        player_id = uuid.uuid4()
+        player = Player(
+            id=player_id,
+            username=f"test_{uuid.uuid4().hex[:8]}",
+            email=f"test_{uuid.uuid4().hex[:8]}@test.com",
+            password_hash="not-a-real-hash",
+            balance_micro=0,
+        )
+        session.add(player)
+        await session.commit()
+        return player_id

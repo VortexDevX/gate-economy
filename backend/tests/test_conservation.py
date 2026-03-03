@@ -13,7 +13,33 @@ from app.models.treasury import AccountType, SystemAccount
 
 @pytest.mark.asyncio
 async def test_conservation_after_registrations(client: AsyncClient):
-    """treasury + SUM(player_balances) must equal INITIAL_SEED at all times."""
+    """treasury + SUM(player_balances) must equal INITIAL_SEED at all times.
+
+    Uses a snapshot approach: measure state before and after registrations.
+    This makes the test immune to players created by other tests.
+    """
+    engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    factory = async_sessionmaker(
+        bind=engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    # ── Snapshot BEFORE ──
+    async with factory() as session:
+        result = await session.execute(
+            select(SystemAccount.balance_micro).where(
+                SystemAccount.account_type == AccountType.TREASURY
+            )
+        )
+        treasury_before = result.scalar_one()
+
+        result = await session.execute(
+            select(func.coalesce(func.sum(Player.balance_micro), 0))
+        )
+        players_before = int(result.scalar_one())
+
+    total_before = treasury_before + players_before
+
+    # ── Register 5 new players ──
     num_players = 5
     for _ in range(num_players):
         tag = uuid.uuid4().hex[:8]
@@ -24,29 +50,35 @@ async def test_conservation_after_registrations(client: AsyncClient):
         })
         assert resp.status_code == 201
 
-    # Separate engine to read committed state
-    engine = create_async_engine(settings.database_url, poolclass=NullPool)
-    factory = async_sessionmaker(
-        bind=engine, class_=AsyncSession, expire_on_commit=False
-    )
+    # ── Snapshot AFTER ──
     async with factory() as session:
         result = await session.execute(
             select(SystemAccount.balance_micro).where(
                 SystemAccount.account_type == AccountType.TREASURY
             )
         )
-        treasury_balance = result.scalar_one()
+        treasury_after = result.scalar_one()
 
         result = await session.execute(
             select(func.coalesce(func.sum(Player.balance_micro), 0))
         )
-        player_total = result.scalar_one()
+        players_after = int(result.scalar_one())
 
     await engine.dispose()
 
-    total = treasury_balance + player_total
-    assert total == settings.initial_seed_micro, (
-        f"Conservation violated: treasury={treasury_balance} "
-        f"+ players={player_total} = {total} "
-        f"!= {settings.initial_seed_micro}"
+    total_after = treasury_after + players_after
+
+    # ── Conservation: total must not change ──
+    assert total_before == total_after, (
+        f"Conservation violated: "
+        f"before={total_before} (treasury={treasury_before} + players={players_before}), "
+        f"after={total_after} (treasury={treasury_after} + players={players_after})"
+    )
+
+    # ── Verify the treasury decreased by exactly the grants issued ──
+    expected_grant_total = num_players * settings.starting_balance_micro
+    actual_treasury_decrease = treasury_before - treasury_after
+    assert actual_treasury_decrease == expected_grant_total, (
+        f"Treasury decrease {actual_treasury_decrease} != "
+        f"expected {expected_grant_total} ({num_players} × {settings.starting_balance_micro})"
     )
