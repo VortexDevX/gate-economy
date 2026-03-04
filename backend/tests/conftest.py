@@ -18,6 +18,7 @@ from app.models.ledger import LedgerEntry
 from app.models.player import Player
 from app.models.tick import Tick
 from app.models.treasury import AccountType, SystemAccount
+from app.models.market import MarketPrice, Order, Trade
 
 
 def _make_engine():
@@ -33,6 +34,9 @@ async def _reset_database(factory) -> None:
     async with factory() as session:
         # Delete in FK-safe order
         await session.execute(delete(Intent))
+        await session.execute(delete(Trade))
+        await session.execute(delete(Order))
+        await session.execute(delete(MarketPrice))
         await session.execute(delete(GateShare))
         await session.execute(delete(Gate))
         await session.execute(delete(LedgerEntry))
@@ -162,5 +166,47 @@ async def test_player_id(session_factory) -> uuid.UUID:
             balance_micro=0,
         )
         session.add(player)
+        await session.commit()
+        return player_id
+    
+@pytest_asyncio.fixture
+async def funded_player_id(session_factory) -> uuid.UUID:
+    """Create a player with starting balance, properly debited from treasury.
+
+    Unlike test_player_id (which has 0 balance), this player has funds
+    and the treasury is debited — conservation invariant maintained.
+    """
+    from app.models.ledger import AccountEntityType, EntryType
+    from app.services.transfer import transfer
+
+    async with session_factory() as session:
+        player_id = uuid.uuid4()
+        player = Player(
+            id=player_id,
+            username=f"funded_{uuid.uuid4().hex[:8]}",
+            email=f"funded_{uuid.uuid4().hex[:8]}@test.com",
+            password_hash="not-a-real-hash",
+            balance_micro=0,
+        )
+        session.add(player)
+        await session.flush()
+
+        result = await session.execute(
+            select(SystemAccount.id).where(
+                SystemAccount.account_type == AccountType.TREASURY
+            )
+        )
+        treasury_id = result.scalar_one()
+
+        await transfer(
+            session=session,
+            from_type=AccountEntityType.SYSTEM,
+            from_id=treasury_id,
+            to_type=AccountEntityType.PLAYER,
+            to_id=player_id,
+            amount=settings.starting_balance_micro,
+            entry_type=EntryType.STARTING_GRANT,
+            memo="Test funded player",
+        )
         await session.commit()
         return player_id

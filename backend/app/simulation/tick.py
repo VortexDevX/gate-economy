@@ -14,6 +14,15 @@ from app.services.gate_lifecycle import (
     process_discover_intent,
     system_spawn_gate,
 )
+from app.services.order_matching import (
+    cancel_collapsed_gate_orders,
+    create_iso_orders,
+    finalize_iso_transitions,
+    match_orders,
+    process_cancel_order,
+    process_place_order,
+    update_market_prices,
+)
 from app.simulation.rng import TickRNG, derive_seed
 from app.simulation.state_hash import compute_state_hash
 
@@ -21,12 +30,6 @@ logger = structlog.get_logger()
 
 
 # ── No-op hooks — filled in by future phases ──
-
-
-async def _match_orders(
-    session: AsyncSession, tick_number: int, rng: TickRNG
-) -> None:
-    """Phase 5+: Match market orders."""
 
 
 async def _roll_events(
@@ -50,7 +53,7 @@ async def _process_intents(
     tick_id: int,
     rng: TickRNG,
     intents: list[Intent],
-    treasury_id: "uuid.UUID", # type: ignore
+    treasury_id: "uuid.UUID",  # type: ignore
 ) -> None:
     """Route intents to their respective processors."""
     for intent in intents:
@@ -63,7 +66,22 @@ async def _process_intents(
                 rng=rng,
                 treasury_id=treasury_id,
             )
-        # Phase 5+: PLACE_ORDER, CANCEL_ORDER
+        elif intent.intent_type == IntentType.PLACE_ORDER:
+            await process_place_order(
+                session=session,
+                intent=intent,
+                tick_number=tick_number,
+                tick_id=tick_id,
+                treasury_id=treasury_id,
+            )
+        elif intent.intent_type == IntentType.CANCEL_ORDER:
+            await process_cancel_order(
+                session=session,
+                intent=intent,
+                tick_number=tick_number,
+                tick_id=tick_id,
+                treasury_id=treasury_id,
+            )
         # Phase 6+: CREATE_GUILD, GUILD_DIVIDEND, GUILD_INVEST
 
 
@@ -75,7 +93,7 @@ async def _advance_gates(
     tick_number: int,
     tick_id: int,
     rng: TickRNG,
-    treasury_id: "uuid.UUID", # type: ignore
+    treasury_id: "uuid.UUID",  # type: ignore
 ) -> None:
     """System spawn + lifecycle + yield distribution."""
     await system_spawn_gate(session, tick_number, tick_id, rng, treasury_id)
@@ -92,7 +110,7 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
     Must be called with the simulation lock held.
     All state mutations happen in a single DB transaction.
 
-    Steps match the canonical pipeline from PLAN.md Phase 3.
+    Steps match the canonical pipeline from PLAN.md.
     """
     import uuid as _uuid  # deferred to avoid circular at module level
 
@@ -125,7 +143,7 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
         session.add(tick)
         await session.flush()  # populate tick.id for FK references
 
-        # Load treasury ID (needed for gate operations)
+        # Load treasury ID (needed for gate + market operations)
         result = await session.execute(
             select(SystemAccount.id).where(
                 SystemAccount.account_type == AccountType.TREASURY
@@ -156,25 +174,39 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
             session, tick_number, tick.id, rng, treasury_id
         )
 
-        # 8. Match orders (Phase 5+)
-        await _match_orders(session, tick_number, rng)
+        # 8. Create ISO orders for OFFERING gates
+        await create_iso_orders(session, tick_number, treasury_id)
 
-        # 9. Roll events (Phase 8+)
+        # 9. Cancel orders for COLLAPSED gates
+        await cancel_collapsed_gate_orders(
+            session, tick_number, tick.id, treasury_id
+        )
+
+        # 10. Match orders
+        await match_orders(session, tick_number, tick.id, treasury_id)
+
+        # 11. Finalize ISO transitions (all shares sold → ACTIVE)
+        await finalize_iso_transitions(session, tick_number, treasury_id)
+
+        # 12. Update market prices
+        await update_market_prices(session, tick_number, tick.id)
+
+        # 13. Roll events (Phase 8+)
         await _roll_events(session, tick_number, rng)
 
-        # 10. Anti-exploit maintenance (Phase 9+)
+        # 14. Anti-exploit maintenance (Phase 9+)
         await _anti_exploit_maintenance(session, tick_number, rng)
 
-        # 11. Mark remaining PROCESSING intents as EXECUTED
+        # 15. Mark remaining PROCESSING intents as EXECUTED
         #     (REJECTED intents keep their status from step 6)
         for intent in intents:
             if intent.status == IntentStatus.PROCESSING:
                 intent.status = IntentStatus.EXECUTED
 
-        # 12. Compute state hash for replay verification
+        # 16. Compute state hash for replay verification
         state_hash = await compute_state_hash(session)
 
-        # 13. Finalize tick record
+        # 17. Finalize tick record
         tick.completed_at = datetime.now(UTC)
         tick.intent_count = len(intents)
         tick.state_hash = state_hash

@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     gate_offering_ticks: int = 60            # ticks in OFFERING before ACTIVE
     gate_base_decay_rate: float = 0.1        # base stability decay per tick
 
+    # ── Market Fees ──
+    base_fee_rate: float = 0.005             # 0.5% minimum fee rate
+    progressive_fee_rate: float = 0.5        # scaling factor for progressive fees
+    fee_scale_micro: int = 10_000_000        # denominator for progressive scaling (10 currency)
+    max_fee_rate: float = 0.10               # 10% hard cap on fee rate
+    iso_payback_ticks: int = 100             # ticks of yield used to price ISO shares
+
     # ── Celery ──
     celery_broker_url: str = "redis://redis:6379/0"
 

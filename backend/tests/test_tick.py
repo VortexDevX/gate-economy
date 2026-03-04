@@ -54,7 +54,7 @@ async def test_intents_collected_and_executed(
 ):
     """Queued intents are collected by the tick and marked EXECUTED.
 
-    Uses intent types that are still no-ops (Phase 5+/6+) to test
+    Uses intent types that are still no-ops (Phase 6+) to test
     the collection/execution machinery without triggering processors.
     """
     await _clean_ticks_and_intents(session_factory)
@@ -69,8 +69,8 @@ async def test_intents_collected_and_executed(
         )
         intent_b = Intent(
             player_id=test_player_id,
-            intent_type=IntentType.PLACE_ORDER,
-            payload={"asset_type": "GATE_SHARE", "side": "BUY"},
+            intent_type=IntentType.GUILD_INVEST,
+            payload={"guild_id": "00000000-0000-0000-0000-000000000000"},
             status=IntentStatus.QUEUED,
         )
         session.add_all([intent_a, intent_b])

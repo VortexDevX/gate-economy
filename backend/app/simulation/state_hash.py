@@ -1,9 +1,10 @@
 import hashlib
 
-from sqlalchemy import case, func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.gate import Gate, GateShare, GateStatus
+from app.models.gate import Gate, GateShare
+from app.models.market import Order, OrderStatus, OrderSide, Trade
 from app.models.player import Player
 from app.models.treasury import AccountType, SystemAccount
 
@@ -17,9 +18,14 @@ async def compute_state_hash(session: AsyncSession) -> str:
     - Gate counts per status
     - Sum of gate stabilities (truncated to int)
     - Total gate shares held
+    - Open order count
+    - Total escrow locked in open BUY orders
+    - Total trade count
 
     Returns 64-char hex digest.
     """
+    from sqlalchemy import text
+
     # Treasury balance
     result = await session.execute(
         select(SystemAccount.balance_micro).where(
@@ -57,6 +63,29 @@ async def compute_state_hash(session: AsyncSession) -> str:
     )
     total_shares = result.scalar_one()
 
+    # Open order count
+    result = await session.execute(
+        select(func.count(Order.id)).where(
+            Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL])
+        )
+    )
+    open_orders = result.scalar_one()
+
+    # Total escrow locked in open BUY orders
+    result = await session.execute(
+        select(func.coalesce(func.sum(Order.escrow_micro), 0)).where(
+            Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
+            Order.side == OrderSide.BUY,
+        )
+    )
+    total_escrow = result.scalar_one()
+
+    # Total trade count
+    result = await session.execute(
+        select(func.count(Trade.id))
+    )
+    total_trades = result.scalar_one()
+
     # Build hash input
     parts = [f"treasury:{treasury_balance}"]
     for player_id, balance in player_rows:
@@ -67,6 +96,11 @@ async def compute_state_hash(session: AsyncSession) -> str:
         parts.append(f"gates:{status_name}:{status_counts[status_name]}")
     parts.append(f"stability_sum:{total_stability}")
     parts.append(f"shares_total:{total_shares}")
+
+    # Market state
+    parts.append(f"open_orders:{open_orders}")
+    parts.append(f"total_escrow:{total_escrow}")
+    parts.append(f"total_trades:{total_trades}")
 
     hash_input = "|".join(parts).encode("utf-8")
     return hashlib.sha256(hash_input).hexdigest()

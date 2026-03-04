@@ -29,6 +29,8 @@ class EntryType(str, enum.Enum):
     DIVIDEND = "DIVIDEND"
     AI_BUDGET = "AI_BUDGET"
     ADMIN_ADJUSTMENT = "ADMIN_ADJUSTMENT"
+    ESCROW_LOCK = "ESCROW_LOCK"
+    ESCROW_RELEASE = "ESCROW_RELEASE"
 
 
 class LedgerEntry(Base):

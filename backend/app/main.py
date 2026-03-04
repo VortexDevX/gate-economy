@@ -11,6 +11,8 @@ from app.api.auth import router as auth_router
 from app.api.gates import router as gates_router
 from app.api.health import router as health_router
 from app.api.intents import router as intents_router
+from app.api.market import router as market_router
+from app.api.orders import router as orders_router
 from app.api.players import router as players_router
 from app.api.simulation import router as simulation_router
 from app.config import settings
@@ -225,6 +227,8 @@ def create_app() -> FastAPI:
     app.include_router(intents_router)
     app.include_router(simulation_router)
     app.include_router(gates_router)
+    app.include_router(market_router)
+    app.include_router(orders_router)
 
     return app
 
