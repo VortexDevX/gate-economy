@@ -44,7 +44,6 @@ async def test_sequential_tick_numbering(session_factory, pause_simulation):
 
     assert [t.tick_number for t in ticks] == [1, 2, 3]
 
-    # All seeds must differ
     seeds = {t.seed for t in ticks}
     assert len(seeds) == 3
 
@@ -53,15 +52,19 @@ async def test_sequential_tick_numbering(session_factory, pause_simulation):
 async def test_intents_collected_and_executed(
     session_factory, pause_simulation, test_player_id
 ):
-    """Queued intents are collected by the tick and marked EXECUTED."""
+    """Queued intents are collected by the tick and marked EXECUTED.
+
+    Uses intent types that are still no-ops (Phase 5+/6+) to test
+    the collection/execution machinery without triggering processors.
+    """
     await _clean_ticks_and_intents(session_factory)
 
-    # Insert two queued intents
+    # Insert two queued intents (both are no-op types in current phase)
     async with session_factory() as session:
         intent_a = Intent(
             player_id=test_player_id,
-            intent_type=IntentType.DISCOVER_GATE,
-            payload={"min_rank": "E"},
+            intent_type=IntentType.CREATE_GUILD,
+            payload={"name": "TestGuild"},
             status=IntentStatus.QUEUED,
         )
         intent_b = Intent(

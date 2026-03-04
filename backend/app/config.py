@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     simulation_initial_seed: int = 42
     simulation_tick_interval: int = 5  # seconds between ticks
 
+    # ── Gate Settings ──
+    system_spawn_probability: float = 0.15   # chance per tick of system gate spawn
+    gate_offering_ticks: int = 60            # ticks in OFFERING before ACTIVE
+    gate_base_decay_rate: float = 0.1        # base stability decay per tick
+
     # ── Celery ──
     celery_broker_url: str = "redis://redis:6379/0"
 

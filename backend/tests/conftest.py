@@ -5,14 +5,18 @@ from collections.abc import AsyncGenerator
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis as RedisClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import settings
 from app.core.deps import get_db
 from app.main import app
+from app.models.gate import Gate, GateShare
+from app.models.intent import Intent
+from app.models.ledger import LedgerEntry
 from app.models.player import Player
+from app.models.tick import Tick
 from app.models.treasury import AccountType, SystemAccount
 
 
@@ -24,24 +28,54 @@ def _make_factory(engine):
     return async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
 
-async def _ensure_treasury(factory) -> None:
+async def _reset_database(factory) -> None:
+    """Wipe all test data and reset treasury to INITIAL_SEED."""
     async with factory() as session:
+        # Delete in FK-safe order
+        await session.execute(delete(Intent))
+        await session.execute(delete(GateShare))
+        await session.execute(delete(Gate))
+        await session.execute(delete(LedgerEntry))
+        await session.execute(delete(Player))
+        await session.execute(delete(Tick))
+
+        # Reset or create treasury
         result = await session.execute(
             select(SystemAccount).where(
                 SystemAccount.account_type == AccountType.TREASURY
             )
         )
-        if result.scalar_one_or_none() is None:
+        treasury = result.scalar_one_or_none()
+        if treasury is None:
             session.add(
                 SystemAccount(
                     account_type=AccountType.TREASURY,
                     balance_micro=settings.initial_seed_micro,
                 )
             )
-            await session.commit()
+        else:
+            treasury.balance_micro = settings.initial_seed_micro
+        await session.commit()
 
 
-# ── Existing fixtures ──
+# ── Autouse: clean slate before every test ──
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _clean_state():
+    """Reset DB to pristine state before each test.
+
+    Ensures no test can poison another via committed state.
+    Treasury restored to INITIAL_SEED, all players/gates/ticks wiped.
+    """
+    engine = _make_engine()
+    factory = _make_factory(engine)
+    await _reset_database(factory)
+    await engine.dispose()
+    yield
+
+
+# ── Core fixtures ──
 
 
 @pytest_asyncio.fixture
@@ -49,7 +83,6 @@ async def db() -> AsyncGenerator[AsyncSession, None]:
     """Self-contained DB session for service-level tests."""
     engine = _make_engine()
     factory = _make_factory(engine)
-    await _ensure_treasury(factory)
     async with factory() as session:
         yield session
         await session.rollback()
@@ -61,7 +94,6 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
     """Self-contained HTTPX client with its own engine."""
     engine = _make_engine()
     factory = _make_factory(engine)
-    await _ensure_treasury(factory)
 
     async def _override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with factory() as session:
@@ -69,7 +101,7 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 
     app.dependency_overrides[get_db] = _override_get_db
     async with AsyncClient(
-        transport=ASGITransport(app=app), # type: ignore
+        transport=ASGITransport(app=app),  # type: ignore
         base_url="http://test",
     ) as ac:
         yield ac
@@ -77,15 +109,11 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
     await engine.dispose()
 
 
-# ── Phase 3 fixtures ──
-
-
 @pytest_asyncio.fixture
 async def session_factory():
     """Session factory for direct simulation/service testing."""
     engine = _make_engine()
     factory = _make_factory(engine)
-    await _ensure_treasury(factory)
     yield factory
     await engine.dispose()
 

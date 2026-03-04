@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -69,3 +70,8 @@ async def get_current_player(
         )
 
     return player
+
+
+# ── Type aliases for dependency injection ──
+DBSession = Annotated[AsyncSession, Depends(get_db)]
+CurrentPlayer = Annotated[Player, Depends(get_current_player)]

@@ -1,15 +1,18 @@
 import pytest
 from sqlalchemy import delete
 
+from app.models.gate import Gate, GateShare
 from app.models.intent import Intent
 from app.models.tick import Tick
 from app.simulation.tick import execute_tick
 
 
-async def _clean_ticks_and_intents(session_factory):
-    """Delete all intents then ticks (FK order)."""
+async def _clean_simulation_state(session_factory):
+    """Delete all simulation-created state (FK order preserved)."""
     async with session_factory() as session:
         await session.execute(delete(Intent))
+        await session.execute(delete(GateShare))
+        await session.execute(delete(Gate))
         await session.execute(delete(Tick))
         await session.commit()
 
@@ -35,11 +38,11 @@ async def test_replay_produces_identical_results(
     identical tick numbers, seeds, and state hashes."""
 
     # ── Run 1 ──
-    await _clean_ticks_and_intents(session_factory)
+    await _clean_simulation_state(session_factory)
     run_1 = await _run_n_ticks(session_factory, 5)
 
-    # ── Reset ──
-    await _clean_ticks_and_intents(session_factory)
+    # ── Reset (including gates created by system spawn) ──
+    await _clean_simulation_state(session_factory)
 
     # ── Run 2 ──
     run_2 = await _run_n_ticks(session_factory, 5)
@@ -61,10 +64,10 @@ async def test_different_seed_produces_different_results(
     (verifies RNG chain is actually seed-dependent)."""
     from unittest.mock import patch
 
-    await _clean_ticks_and_intents(session_factory)
+    await _clean_simulation_state(session_factory)
     run_1 = await _run_n_ticks(session_factory, 3)
 
-    await _clean_ticks_and_intents(session_factory)
+    await _clean_simulation_state(session_factory)
 
     # Patch the initial seed to a different value
     with patch("app.simulation.tick.settings") as mock_settings:
