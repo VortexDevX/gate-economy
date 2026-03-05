@@ -15,6 +15,7 @@ from app.models.gate import (
     GateShare,
     GateStatus,
 )
+from app.models.guild import Guild, GuildGateHolding, GuildStatus
 from app.models.intent import Intent, IntentStatus
 from app.models.ledger import AccountEntityType, EntryType
 from app.services.transfer import InsufficientBalance, transfer
@@ -290,6 +291,8 @@ async def distribute_yield(
 
     - Only ACTIVE gates yield (not OFFERING, UNSTABLE, or COLLAPSED).
     - Treasury-held shares are skipped (no self-payment).
+    - Guild gate holdings receive yield to guild treasury.
+    - Insolvent guilds receive 50% yield penalty.
     - Integer division for pro-rata; remainder stays in treasury.
     - If treasury is exhausted, distribution stops entirely.
     """
@@ -303,7 +306,7 @@ async def distribute_yield(
         if effective_yield <= 0:
             continue
 
-        # Load all shareholders with quantity > 0
+        # Player/treasury shareholders
         share_result = await session.execute(
             select(GateShare).where(
                 GateShare.gate_id == gate.id,
@@ -312,23 +315,34 @@ async def distribute_yield(
         )
         all_shares = list(share_result.scalars().all())
 
-        total_held = sum(s.quantity for s in all_shares)
+        # Guild shareholders
+        guild_result = await session.execute(
+            select(GuildGateHolding).where(
+                GuildGateHolding.gate_id == gate.id,
+                GuildGateHolding.quantity > 0,
+            )
+        )
+        guild_holdings = list(guild_result.scalars().all())
+
+        total_held = (
+            sum(s.quantity for s in all_shares)
+            + sum(gh.quantity for gh in guild_holdings)
+        )
         if total_held == 0:
             continue
 
-        # Skip treasury-held shares — no self-payment
+        # Player shares (skip treasury — no self-payment)
         player_shares = [s for s in all_shares if s.player_id != treasury_id]
-        if not player_shares:
-            continue
 
-        # Deterministic ordering by player_id
+        if not player_shares and not guild_holdings:
+            continue  # only treasury holds shares
+
+        # Pay player shareholders
         player_shares.sort(key=lambda s: str(s.player_id))
-
         for share in player_shares:
             payout = effective_yield * share.quantity // total_held
             if payout <= 0:
                 continue
-
             try:
                 await transfer(
                     session=session,
@@ -347,4 +361,41 @@ async def distribute_yield(
                     gate_id=str(gate.id),
                     player_id=str(share.player_id),
                 )
-                return  # Treasury empty — stop all distribution this tick
+                return
+
+        # Pay guild shareholders
+        guild_holdings.sort(key=lambda gh: str(gh.guild_id))
+        for gh in guild_holdings:
+            payout = effective_yield * gh.quantity // total_held
+            if payout <= 0:
+                continue
+
+            # Insolvent guilds receive 50% yield
+            g_result = await session.execute(
+                select(Guild.status).where(Guild.id == gh.guild_id)
+            )
+            guild_status = g_result.scalar_one_or_none()
+            if guild_status == GuildStatus.INSOLVENT:
+                payout = payout // 2
+                if payout <= 0:
+                    continue
+
+            try:
+                await transfer(
+                    session=session,
+                    from_type=AccountEntityType.SYSTEM,
+                    from_id=treasury_id,
+                    to_type=AccountEntityType.GUILD,
+                    to_id=gh.guild_id,
+                    amount=payout,
+                    entry_type=EntryType.YIELD_PAYMENT,
+                    memo=f"Guild yield from gate {gate.id}",
+                    tick_id=tick_id,
+                )
+            except InsufficientBalance:
+                logger.warning(
+                    "treasury_exhausted_during_guild_yield",
+                    gate_id=str(gate.id),
+                    guild_id=str(gh.guild_id),
+                )
+                return

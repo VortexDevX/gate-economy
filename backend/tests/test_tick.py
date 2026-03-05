@@ -52,14 +52,16 @@ async def test_sequential_tick_numbering(session_factory, pause_simulation):
 async def test_intents_collected_and_executed(
     session_factory, pause_simulation, test_player_id
 ):
-    """Queued intents are collected by the tick and marked EXECUTED.
+    """Queued intents are collected by the tick and processed.
 
-    Uses intent types that are still no-ops (Phase 6+) to test
-    the collection/execution machinery without triggering processors.
+    CREATE_GUILD will be REJECTED (player has 0 balance).
+    GUILD_INVEST will be REJECTED (guild doesn't exist).
+    The test verifies the collection/routing machinery works —
+    intents are picked up, processed, and marked with processed_tick.
     """
     await _clean_ticks_and_intents(session_factory)
 
-    # Insert two queued intents (both are no-op types in current phase)
+    # Insert two queued intents (both will be rejected due to validation)
     async with session_factory() as session:
         intent_a = Intent(
             player_id=test_player_id,
@@ -82,15 +84,16 @@ async def test_intents_collected_and_executed(
 
     assert tick.intent_count == 2
 
-    # Verify both intents updated
+    # Verify both intents were collected and processed (REJECTED by validation)
     async with session_factory() as session:
         for intent_id in (id_a, id_b):
             result = await session.execute(
                 select(Intent).where(Intent.id == intent_id)
             )
             intent = result.scalar_one()
-            assert intent.status == IntentStatus.EXECUTED
+            assert intent.status == IntentStatus.REJECTED
             assert intent.processed_tick == tick.id
+            assert intent.reject_reason is not None
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,8 @@
 │   │   │   ├── 📄 0077d445e221_add_gates_gate_rank_profiles_gate_shares.py
 │   │   │   ├── 📄 7030291f0b68_add_orders_trades_market_prices_and_.py
 │   │   │   ├── 📄 9db8473f1dcd_add_players_system_accounts_ledger_.py
-│   │   │   └── 📄 af99e45efd47_add_ticks_and_intents.py
+│   │   │   ├── 📄 af99e45efd47_add_ticks_and_intents.py
+│   │   │   └── 📄 f1da578fa5fc_add_guilds_guild_members_guild_shares_.py
 │   │   ├── 📄 env.py
 │   │   └── 📄 script.py.mako
 │   ├── 📁 app/
@@ -17,6 +18,7 @@
 │   │   │   ├── 📄 __init__.py
 │   │   │   ├── 📄 auth.py
 │   │   │   ├── 📄 gates.py
+│   │   │   ├── 📄 guilds.py
 │   │   │   ├── 📄 health.py
 │   │   │   ├── 📄 intents.py
 │   │   │   ├── 📄 market.py
@@ -31,6 +33,7 @@
 │   │   │   ├── 📄 __init__.py
 │   │   │   ├── 📄 base.py
 │   │   │   ├── 📄 gate.py
+│   │   │   ├── 📄 guild.py
 │   │   │   ├── 📄 intent.py
 │   │   │   ├── 📄 ledger.py
 │   │   │   ├── 📄 market.py
@@ -41,6 +44,7 @@
 │   │   │   ├── 📄 __init__.py
 │   │   │   ├── 📄 auth.py
 │   │   │   ├── 📄 gate.py
+│   │   │   ├── 📄 guild.py
 │   │   │   ├── 📄 intent.py
 │   │   │   ├── 📄 market.py
 │   │   │   ├── 📄 player.py
@@ -50,6 +54,7 @@
 │   │   │   ├── 📄 auth.py
 │   │   │   ├── 📄 fee_calculator.py
 │   │   │   ├── 📄 gate_lifecycle.py
+│   │   │   ├── 📄 guild_manager.py
 │   │   │   ├── 📄 order_matching.py
 │   │   │   └── 📄 transfer.py
 │   │   ├── 📁 simulation/
@@ -71,6 +76,8 @@
 │   │   ├── 📄 test_fee_calculator.py
 │   │   ├── 📄 test_gates.py
 │   │   ├── 📄 test_gates_api.py
+│   │   ├── 📄 test_guild_api.py
+│   │   ├── 📄 test_guild_manager.py
 │   │   ├── 📄 test_health.py
 │   │   ├── 📄 test_intents_api.py
 │   │   ├── 📄 test_lock.py
@@ -91,6 +98,7 @@
 │   │   ├── 📄 PHASE_3_PLAN.md
 │   │   ├── 📄 PHASE_4_PLAN.md
 │   │   ├── 📄 PHASE_5_PLAN.md
+│   │   ├── 📄 PHASE_6_PLAN.md
 │   │   └── 📄 PLAN.md
 │   ├── 📁 postman/
 │   │   └── 📄 DungeonGateEconomy.postman_collection.json
@@ -99,7 +107,8 @@
 │   │   ├── 📄 SUMMARY_2.md
 │   │   ├── 📄 SUMMARY_3.md
 │   │   ├── 📄 SUMMARY_4.md
-│   │   └── 📄 SUMMARY_5.md
+│   │   ├── 📄 SUMMARY_5.md
+│   │   └── 📄 SUMMARY_6.md
 │   ├── 📄 CONTEXT.md
 │   ├── 📄 architecture.md
 │   └── 📄 runbook.md

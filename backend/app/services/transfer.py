@@ -49,8 +49,21 @@ async def _load_and_lock(
         if account is None:
             raise ValueError(f"SystemAccount {account_id} not found")
         return account
+    
+    if account_type == AccountEntityType.GUILD:
+        from app.models.guild import Guild
 
-    # GUILD will be added in Phase 6
+        stmt = (
+            select(Guild)
+            .where(Guild.id == account_id)
+            .with_for_update()
+        )
+        result = await session.execute(stmt)
+        account = result.scalar_one_or_none()
+        if account is None:
+            raise ValueError(f"Guild {account_id} not found")
+        return account
+
     raise ValueError(f"Unsupported account type: {account_type}")
 
 

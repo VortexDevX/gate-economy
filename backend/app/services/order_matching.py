@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.gate import Gate, GateRankProfile, GateShare, GateStatus
+from app.models.guild import Guild, GuildGateHolding, GuildShare, GuildStatus
 from app.models.intent import Intent, IntentStatus
 from app.models.ledger import AccountEntityType, EntryType
 from app.models.market import (
@@ -34,27 +35,31 @@ logger = structlog.get_logger()
 
 
 def calculate_iso_price(profile: GateRankProfile) -> int:
-    """ISO price per share = avg_yield * payback_ticks / total_shares."""
     avg_yield = (profile.yield_min_micro + profile.yield_max_micro) // 2
     return avg_yield * settings.iso_payback_ticks // profile.total_shares
 
 
 async def _get_available_shares(
-    session: AsyncSession,
-    player_id: uuid.UUID,
-    asset_type: AssetType,
-    asset_id: uuid.UUID,
+    session: AsyncSession, player_id: uuid.UUID,
+    asset_type: AssetType, asset_id: uuid.UUID,
 ) -> int:
     """Owned shares minus shares committed to open sell orders."""
     if asset_type == AssetType.GATE_SHARE:
         result = await session.execute(
-            select(GateShare.quantity).where(
-                and_(GateShare.gate_id == asset_id, GateShare.player_id == player_id)
-            )
+            select(GateShare.quantity).where(and_(
+                GateShare.gate_id == asset_id, GateShare.player_id == player_id,
+            ))
+        )
+        owned = result.scalar_one_or_none() or 0
+    elif asset_type == AssetType.GUILD_SHARE:
+        result = await session.execute(
+            select(GuildShare.quantity).where(and_(
+                GuildShare.guild_id == asset_id, GuildShare.player_id == player_id,
+            ))
         )
         owned = result.scalar_one_or_none() or 0
     else:
-        owned = 0  # GUILD_SHARE — Phase 6
+        owned = 0
 
     result = await session.execute(
         select(func.coalesce(
@@ -67,8 +72,7 @@ async def _get_available_shares(
             Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
         ))
     )
-    committed = result.scalar_one()
-    return owned - committed
+    return owned - result.scalar_one()
 
 
 async def _validate_asset(
@@ -83,7 +87,15 @@ async def _validate_asset(
         if gate.status == GateStatus.COLLAPSED:
             return "Gate has collapsed"
         return None
-    return "Asset type not yet supported"
+    if asset_type == AssetType.GUILD_SHARE:
+        result = await session.execute(select(Guild).where(Guild.id == asset_id))
+        guild = result.scalar_one_or_none()
+        if guild is None:
+            return "Guild not found"
+        if guild.status == GuildStatus.DISSOLVED:
+            return "Guild is dissolved"
+        return None
+    return "Asset type not supported"
 
 
 # ── ISO Management ──
@@ -92,24 +104,21 @@ async def _validate_asset(
 async def create_iso_orders(
     session: AsyncSession, tick_number: int, treasury_id: uuid.UUID,
 ) -> None:
-    """Create system SELL orders for OFFERING gates that lack one."""
+    """Create system SELL orders for OFFERING gates and guild float shares."""
+    # Gate ISOs
     result = await session.execute(
         select(Gate).where(Gate.status == GateStatus.OFFERING)
     )
     for gate in result.scalars().all():
-        # Skip if ISO order already exists
         exists = await session.execute(
             select(Order.id).where(and_(
-                Order.asset_id == gate.id,
-                Order.is_system.is_(True),
+                Order.asset_id == gate.id, Order.is_system.is_(True),
                 Order.side == OrderSide.SELL,
                 Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
             )).limit(1)
         )
         if exists.scalar_one_or_none() is not None:
             continue
-
-        # Treasury share count for this gate
         result2 = await session.execute(
             select(GateShare.quantity).where(and_(
                 GateShare.gate_id == gate.id, GateShare.player_id == treasury_id,
@@ -118,28 +127,50 @@ async def create_iso_orders(
         qty = result2.scalar_one_or_none()
         if not qty or qty <= 0:
             continue
-
-        # Price from rank profile
         result2 = await session.execute(
             select(GateRankProfile).where(GateRankProfile.rank == gate.rank)
         )
         profile = result2.scalar_one()
         iso_price = calculate_iso_price(profile)
-
         session.add(Order(
-            player_id=treasury_id,
-            asset_type=AssetType.GATE_SHARE,
-            asset_id=gate.id,
-            side=OrderSide.SELL,
-            quantity=qty,
-            price_limit_micro=iso_price,
-            created_at_tick=tick_number,
+            player_id=treasury_id, asset_type=AssetType.GATE_SHARE,
+            asset_id=gate.id, side=OrderSide.SELL, quantity=qty,
+            price_limit_micro=iso_price, created_at_tick=tick_number,
             is_system=True,
         ))
-        logger.info(
-            "iso_order_created",
-            gate_id=str(gate.id), price=iso_price, qty=qty,
+        logger.info("iso_order_created", gate_id=str(gate.id), price=iso_price, qty=qty)
+
+    # Guild share ISOs
+    result = await session.execute(
+        select(Guild).where(Guild.status == GuildStatus.ACTIVE)
+    )
+    for guild in result.scalars().all():
+        r2 = await session.execute(
+            select(GuildShare.quantity).where(and_(
+                GuildShare.guild_id == guild.id, GuildShare.player_id == guild.id,
+            ))
         )
+        self_held = r2.scalar_one_or_none() or 0
+        if self_held <= 0:
+            continue
+        exists = await session.execute(
+            select(Order.id).where(and_(
+                Order.asset_type == AssetType.GUILD_SHARE,
+                Order.asset_id == guild.id, Order.guild_id == guild.id,
+                Order.side == OrderSide.SELL,
+                Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
+            )).limit(1)
+        )
+        if exists.scalar_one_or_none() is not None:
+            continue
+        iso_price = settings.guild_creation_cost_micro // guild.total_shares
+        session.add(Order(
+            player_id=guild.id, guild_id=guild.id,
+            asset_type=AssetType.GUILD_SHARE, asset_id=guild.id,
+            side=OrderSide.SELL, quantity=self_held,
+            price_limit_micro=iso_price, created_at_tick=tick_number,
+        ))
+        logger.info("guild_iso_created", guild_id=str(guild.id), price=iso_price, qty=self_held)
 
 
 async def finalize_iso_transitions(
@@ -158,11 +189,9 @@ async def finalize_iso_transitions(
         treasury_qty = result2.scalar_one_or_none() or 0
         if treasury_qty == 0:
             gate.status = GateStatus.ACTIVE
-            # Mark remaining ISO orders FILLED (safety cleanup)
             result2 = await session.execute(
                 select(Order).where(and_(
-                    Order.asset_id == gate.id,
-                    Order.is_system.is_(True),
+                    Order.asset_id == gate.id, Order.is_system.is_(True),
                     Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
                 ))
             )
@@ -179,33 +208,60 @@ async def cancel_collapsed_gate_orders(
     session: AsyncSession, tick_number: int, tick_id: int,
     treasury_id: uuid.UUID,
 ) -> None:
-    """Cancel all open orders for collapsed gates, release BUY escrow."""
+    """Cancel open orders for collapsed gates and dissolved guilds."""
+    # Collapsed gates
     result = await session.execute(
         select(Gate.id).where(Gate.status == GateStatus.COLLAPSED)
     )
     collapsed_ids = [r[0] for r in result.all()]
-    if not collapsed_ids:
-        return
+    if collapsed_ids:
+        result = await session.execute(
+            select(Order).where(and_(
+                Order.asset_type == AssetType.GATE_SHARE,
+                Order.asset_id.in_(collapsed_ids),
+                Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
+            )).with_for_update()
+        )
+        for order in result.scalars().all():
+            if order.side == OrderSide.BUY and order.escrow_micro > 0:
+                to_type = AccountEntityType.GUILD if order.guild_id else AccountEntityType.PLAYER
+                to_id = order.guild_id if order.guild_id else order.player_id
+                await transfer(
+                    session=session,
+                    from_type=AccountEntityType.SYSTEM, from_id=treasury_id,
+                    to_type=to_type, to_id=to_id,
+                    amount=order.escrow_micro, entry_type=EntryType.ESCROW_RELEASE,
+                    tick_id=tick_id, memo=f"Gate collapsed: {order.asset_id}",
+                )
+                order.escrow_micro = 0
+            order.status = OrderStatus.CANCELLED
+            order.updated_at_tick = tick_number
 
+    # Dissolved guilds — cleanup any remaining GUILD_SHARE orders
     result = await session.execute(
-        select(Order).where(and_(
-            Order.asset_type == AssetType.GATE_SHARE,
-            Order.asset_id.in_(collapsed_ids),
-            Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
-        )).with_for_update()
+        select(Guild.id).where(Guild.status == GuildStatus.DISSOLVED)
     )
-    for order in result.scalars().all():
-        if order.side == OrderSide.BUY and order.escrow_micro > 0:
-            await transfer(
-                session=session,
-                from_type=AccountEntityType.SYSTEM, from_id=treasury_id,
-                to_type=AccountEntityType.PLAYER, to_id=order.player_id,
-                amount=order.escrow_micro, entry_type=EntryType.ESCROW_RELEASE,
-                tick_id=tick_id, memo=f"Gate collapsed: {order.asset_id}",
-            )
-            order.escrow_micro = 0
-        order.status = OrderStatus.CANCELLED
-        order.updated_at_tick = tick_number
+    dissolved_ids = [r[0] for r in result.all()]
+    if dissolved_ids:
+        result = await session.execute(
+            select(Order).where(and_(
+                Order.asset_type == AssetType.GUILD_SHARE,
+                Order.asset_id.in_(dissolved_ids),
+                Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
+            )).with_for_update()
+        )
+        for order in result.scalars().all():
+            if order.side == OrderSide.BUY and order.escrow_micro > 0:
+                await transfer(
+                    session=session,
+                    from_type=AccountEntityType.SYSTEM, from_id=treasury_id,
+                    to_type=AccountEntityType.PLAYER, to_id=order.player_id,
+                    amount=order.escrow_micro, entry_type=EntryType.ESCROW_RELEASE,
+                    tick_id=tick_id, memo=f"Guild dissolved: {order.asset_id}",
+                )
+                order.escrow_micro = 0
+            order.status = OrderStatus.CANCELLED
+            order.updated_at_tick = tick_number
 
 
 # ── Intent Processing ──
@@ -239,18 +295,18 @@ async def process_place_order(
         intent.reject_reason = error
         return
 
-    # Quantity cannot exceed total shares of asset
+    # Total shares check
+    total = None
     if asset_type == AssetType.GATE_SHARE:
-        result = await session.execute(
-            select(Gate.total_shares).where(Gate.id == asset_id)
-        )
-        total = result.scalar_one_or_none()
-        if total and quantity > total:
-            intent.status = IntentStatus.REJECTED
-            intent.reject_reason = (
-                f"Quantity {quantity} exceeds total shares {total}"
-            )
-            return
+        r = await session.execute(select(Gate.total_shares).where(Gate.id == asset_id))
+        total = r.scalar_one_or_none()
+    elif asset_type == AssetType.GUILD_SHARE:
+        r = await session.execute(select(Guild.total_shares).where(Guild.id == asset_id))
+        total = r.scalar_one_or_none()
+    if total and quantity > total:
+        intent.status = IntentStatus.REJECTED
+        intent.reject_reason = f"Quantity {quantity} exceeds total shares {total}"
+        return
 
     if side == OrderSide.BUY:
         escrow_total, _ = calculate_escrow(quantity, price_limit)
@@ -260,18 +316,14 @@ async def process_place_order(
         balance = result.scalar_one_or_none()
         if balance is None or balance < escrow_total:
             intent.status = IntentStatus.REJECTED
-            intent.reject_reason = (
-                f"Insufficient balance for escrow ({escrow_total})"
-            )
+            intent.reject_reason = f"Insufficient balance for escrow ({escrow_total})"
             return
-
         await transfer(
             session=session,
             from_type=AccountEntityType.PLAYER, from_id=intent.player_id,
             to_type=AccountEntityType.SYSTEM, to_id=treasury_id,
             amount=escrow_total, entry_type=EntryType.ESCROW_LOCK,
-            tick_id=tick_id,
-            memo=f"Buy escrow: {quantity}x {asset_id}",
+            tick_id=tick_id, memo=f"Buy escrow: {quantity}x {asset_id}",
         )
         session.add(Order(
             player_id=intent.player_id, asset_type=asset_type,
@@ -285,9 +337,7 @@ async def process_place_order(
         )
         if available < quantity:
             intent.status = IntentStatus.REJECTED
-            intent.reject_reason = (
-                f"Insufficient shares: have {available}, need {quantity}"
-            )
+            intent.reject_reason = f"Insufficient shares: have {available}, need {quantity}"
             return
         session.add(Order(
             player_id=intent.player_id, asset_type=asset_type,
@@ -309,7 +359,6 @@ async def process_cancel_order(
         intent.status = IntentStatus.REJECTED
         intent.reject_reason = f"Invalid payload: {e}"
         return
-
     result = await session.execute(
         select(Order).where(Order.id == order_id).with_for_update()
     )
@@ -326,7 +375,6 @@ async def process_cancel_order(
         intent.status = IntentStatus.REJECTED
         intent.reject_reason = f"Cannot cancel {order.status.value} order"
         return
-
     if order.side == OrderSide.BUY and order.escrow_micro > 0:
         await transfer(
             session=session,
@@ -348,20 +396,27 @@ async def _execute_trade(
     trade_qty: int, trade_price: int,
     tick_number: int, tick_id: int, treasury_id: uuid.UUID,
 ) -> Trade:
-    """Execute a single matched trade atomically.
-
-    Currency flow:
-    - P2P: treasury pays seller (from buyer escrow), seller pays fee.
-      Buyer fee stays in treasury implicitly (consumed from escrow).
-    - ISO: no settlement transfer (treasury is seller). Escrow = payment.
-    """
+    """Execute a single matched trade. Handles gate/guild shares and guild orders."""
     trade_value = trade_qty * trade_price
     buyer_fee = calculate_fee(trade_value)
-    is_iso = sell_order.is_system
-    seller_fee = 0 if is_iso else calculate_fee(trade_value)
+    is_gate_iso = sell_order.is_system
+    sell_is_guild = sell_order.guild_id is not None and not is_gate_iso
+    buy_is_guild = buy_order.guild_id is not None
+    seller_fee = 0 if (is_gate_iso or sell_is_guild) else calculate_fee(trade_value)
 
     # ── Currency settlement ──
-    if not is_iso:
+    if is_gate_iso:
+        pass  # escrow IS the payment
+    elif sell_is_guild:
+        await transfer(
+            session=session,
+            from_type=AccountEntityType.SYSTEM, from_id=treasury_id,
+            to_type=AccountEntityType.GUILD, to_id=sell_order.guild_id,
+            amount=trade_value, entry_type=EntryType.TRADE_SETTLEMENT,
+            tick_id=tick_id,
+            memo=f"Guild trade: {trade_qty} shares @ {trade_price}",
+        )
+    else:
         await transfer(
             session=session,
             from_type=AccountEntityType.SYSTEM, from_id=treasury_id,
@@ -381,49 +436,91 @@ async def _execute_trade(
             )
 
     # ── Share transfer ──
-    seller_pid = treasury_id if is_iso else sell_order.player_id
-    result = await session.execute(
-        select(GateShare).where(and_(
-            GateShare.gate_id == sell_order.asset_id,
-            GateShare.player_id == seller_pid,
-        )).with_for_update()
-    )
-    seller_shares = result.scalar_one()
-    seller_shares.quantity -= trade_qty
+    asset_type = buy_order.asset_type
+    if asset_type == AssetType.GATE_SHARE:
+        # Seller side (always GateShare)
+        seller_pid = treasury_id if is_gate_iso else sell_order.player_id
+        result = await session.execute(
+            select(GateShare).where(and_(
+                GateShare.gate_id == sell_order.asset_id,
+                GateShare.player_id == seller_pid,
+            )).with_for_update()
+        )
+        result.scalar_one().quantity -= trade_qty
 
-    result = await session.execute(
-        select(GateShare).where(and_(
-            GateShare.gate_id == buy_order.asset_id,
-            GateShare.player_id == buy_order.player_id,
-        )).with_for_update()
-    )
-    buyer_shares = result.scalar_one_or_none()
-    if buyer_shares is None:
-        session.add(GateShare(
-            gate_id=buy_order.asset_id,
-            player_id=buy_order.player_id,
-            quantity=trade_qty,
-        ))
-    else:
-        buyer_shares.quantity += trade_qty
+        # Buyer side
+        if buy_is_guild:
+            result = await session.execute(
+                select(GuildGateHolding).where(and_(
+                    GuildGateHolding.guild_id == buy_order.guild_id,
+                    GuildGateHolding.gate_id == buy_order.asset_id,
+                )).with_for_update()
+            )
+            holding = result.scalar_one_or_none()
+            if holding is None:
+                session.add(GuildGateHolding(
+                    guild_id=buy_order.guild_id,
+                    gate_id=buy_order.asset_id, quantity=trade_qty,
+                ))
+            else:
+                holding.quantity += trade_qty
+        else:
+            result = await session.execute(
+                select(GateShare).where(and_(
+                    GateShare.gate_id == buy_order.asset_id,
+                    GateShare.player_id == buy_order.player_id,
+                )).with_for_update()
+            )
+            buyer_shares = result.scalar_one_or_none()
+            if buyer_shares is None:
+                session.add(GateShare(
+                    gate_id=buy_order.asset_id,
+                    player_id=buy_order.player_id, quantity=trade_qty,
+                ))
+            else:
+                buyer_shares.quantity += trade_qty
+
+    elif asset_type == AssetType.GUILD_SHARE:
+        gid = buy_order.asset_id
+        # Seller
+        result = await session.execute(
+            select(GuildShare).where(and_(
+                GuildShare.guild_id == gid,
+                GuildShare.player_id == sell_order.player_id,
+            )).with_for_update()
+        )
+        result.scalar_one().quantity -= trade_qty
+        # Buyer
+        result = await session.execute(
+            select(GuildShare).where(and_(
+                GuildShare.guild_id == gid,
+                GuildShare.player_id == buy_order.player_id,
+            )).with_for_update()
+        )
+        buyer_shares = result.scalar_one_or_none()
+        if buyer_shares is None:
+            session.add(GuildShare(
+                guild_id=gid, player_id=buy_order.player_id,
+                quantity=trade_qty,
+            ))
+        else:
+            buyer_shares.quantity += trade_qty
 
     # ── Update orders ──
-    # Buyer fee consumed from escrow (stays in treasury, no transfer)
     consumed = trade_value + buyer_fee
     buy_order.escrow_micro -= consumed
     buy_order.filled_quantity += trade_qty
     buy_order.updated_at_tick = tick_number
     buy_order.status = (
-        OrderStatus.FILLED if buy_order.remaining == 0
-        else OrderStatus.PARTIAL
+        OrderStatus.FILLED if buy_order.remaining == 0 else OrderStatus.PARTIAL
     )
-
-    # Release excess escrow on full fill
     if buy_order.status == OrderStatus.FILLED and buy_order.escrow_micro > 0:
+        esc_type = AccountEntityType.GUILD if buy_is_guild else AccountEntityType.PLAYER
+        esc_id = buy_order.guild_id if buy_is_guild else buy_order.player_id
         await transfer(
             session=session,
             from_type=AccountEntityType.SYSTEM, from_id=treasury_id,
-            to_type=AccountEntityType.PLAYER, to_id=buy_order.player_id,
+            to_type=esc_type, to_id=esc_id,
             amount=buy_order.escrow_micro,
             entry_type=EntryType.ESCROW_RELEASE,
             tick_id=tick_id, memo="Excess escrow on fill",
@@ -433,11 +530,9 @@ async def _execute_trade(
     sell_order.filled_quantity += trade_qty
     sell_order.updated_at_tick = tick_number
     sell_order.status = (
-        OrderStatus.FILLED if sell_order.remaining == 0
-        else OrderStatus.PARTIAL
+        OrderStatus.FILLED if sell_order.remaining == 0 else OrderStatus.PARTIAL
     )
 
-    # ── Record trade ──
     trade = Trade(
         buy_order_id=buy_order.id, sell_order_id=sell_order.id,
         asset_type=buy_order.asset_type, asset_id=buy_order.asset_id,
@@ -446,10 +541,7 @@ async def _execute_trade(
         tick_id=tick_id,
     )
     session.add(trade)
-    logger.info(
-        "trade_executed",
-        qty=trade_qty, price=trade_price, iso=is_iso,
-    )
+    logger.info("trade_executed", qty=trade_qty, price=trade_price, iso=is_gate_iso)
     return trade
 
 
@@ -532,7 +624,6 @@ async def update_market_prices(
     with_orders = set(result.all())
 
     for asset_type, asset_id in traded | with_orders:
-        # Last trade price (most recent across all ticks)
         r = await session.execute(
             select(Trade.price_micro).where(and_(
                 Trade.asset_type == asset_type, Trade.asset_id == asset_id,
@@ -540,7 +631,6 @@ async def update_market_prices(
         )
         last_price = r.scalar_one_or_none()
 
-        # Best bid (highest open buy)
         r = await session.execute(
             select(func.max(Order.price_limit_micro)).where(and_(
                 Order.asset_type == asset_type, Order.asset_id == asset_id,
@@ -550,7 +640,6 @@ async def update_market_prices(
         )
         best_bid = r.scalar_one_or_none()
 
-        # Best ask (lowest open sell)
         r = await session.execute(
             select(func.min(Order.price_limit_micro)).where(and_(
                 Order.asset_type == asset_type, Order.asset_id == asset_id,
@@ -560,7 +649,6 @@ async def update_market_prices(
         )
         best_ask = r.scalar_one_or_none()
 
-        # Volume this tick
         r = await session.execute(
             select(func.coalesce(
                 func.sum(Trade.quantity * Trade.price_micro), 0
@@ -571,7 +659,6 @@ async def update_market_prices(
         )
         tick_vol = r.scalar_one()
 
-        # Upsert market price
         r = await session.execute(
             select(MarketPrice).where(and_(
                 MarketPrice.asset_type == asset_type,
@@ -591,5 +678,5 @@ async def update_market_prices(
                 mp.last_price_micro = last_price
             mp.best_bid_micro = best_bid
             mp.best_ask_micro = best_ask
-            mp.volume_24h_micro += tick_vol  # accumulates; windowed in Phase 11
+            mp.volume_24h_micro += tick_vol
             mp.updated_at_tick = tick_number

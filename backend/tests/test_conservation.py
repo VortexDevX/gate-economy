@@ -9,6 +9,7 @@ from sqlalchemy.pool import NullPool
 from app.config import settings
 from app.models.player import Player
 from app.models.treasury import AccountType, SystemAccount
+from app.models.guild import Guild
 
 
 @pytest.mark.asyncio
@@ -36,8 +37,13 @@ async def test_conservation_after_registrations(client: AsyncClient):
             select(func.coalesce(func.sum(Player.balance_micro), 0))
         )
         players_before = int(result.scalar_one())
+        
+        result = await session.execute(
+            select(func.coalesce(func.sum(Guild.treasury_micro), 0))
+        )
+        guilds_before = int(result.scalar_one())
 
-    total_before = treasury_before + players_before
+    total_before = treasury_before + players_before + guilds_before
 
     # ── Register 5 new players ──
     num_players = 5
@@ -63,16 +69,21 @@ async def test_conservation_after_registrations(client: AsyncClient):
             select(func.coalesce(func.sum(Player.balance_micro), 0))
         )
         players_after = int(result.scalar_one())
+        
+        result = await session.execute(
+            select(func.coalesce(func.sum(Guild.treasury_micro), 0))
+        )
+        guilds_after = int(result.scalar_one())
 
     await engine.dispose()
 
-    total_after = treasury_after + players_after
+    total_after = treasury_after + players_after + guilds_after
 
     # ── Conservation: total must not change ──
     assert total_before == total_after, (
         f"Conservation violated: "
-        f"before={total_before} (treasury={treasury_before} + players={players_before}), "
-        f"after={total_after} (treasury={treasury_after} + players={players_after})"
+        f"before={total_before} (treasury={treasury_before} + players={players_before} + guilds={guilds_before}), "
+        f"after={total_after} (treasury={treasury_after} + players={players_after} + guilds={guilds_after})"
     )
 
     # ── Verify the treasury decreased by exactly the grants issued ──

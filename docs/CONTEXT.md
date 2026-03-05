@@ -1,7 +1,7 @@
 # DGE — Build Context
 
 > **Usage**: Paste this into every new AI chat after the system prompt.
-> Then paste the current phase's subplan (e.g., `docs/plan/PHASE_6_PLAN.md`).
+> Then paste the current phase's subplan (e.g., `docs/plan/PHASE_7_PLAN.md`).
 > That's it — two documents total.
 
 ---
@@ -15,8 +15,8 @@
 | 3   | Simulation Engine Core      | ✅ Done | 24    | 43               |
 | 4   | Dungeon Gates               | ✅ Done | 19    | 62               |
 | 5   | Market System               | ✅ Done | 28    | 90               |
-| 6   | Guilds                      | 🔲 NEXT | —     | —                |
-| 7   | AI Traders                  | 🔲      | —     | —                |
+| 6   | Guilds                      | ✅ Done | 19    | 109              |
+| 7   | AI Traders                  | 🔲 NEXT | —     | —                |
 | 8   | Events, News & Real-time    | 🔲      | —     | —                |
 | 9   | Anti-Exploit & Balance      | 🔲      | —     | —                |
 | 10  | Leaderboards & Seasons      | 🔲      | —     | —                |
@@ -24,7 +24,7 @@
 | 12  | Frontend                    | 🔲      | —     | —                |
 | 13  | Hardening & Launch Prep     | 🔲      | —     | —                |
 
-**Baseline: 90 tests passing**
+**Baseline: 109 tests passing**
 
 ---
 
@@ -33,20 +33,24 @@
 **Hard invariant** (verified every tick — violation halts simulation):
 
 ```
-
 treasury_balance + SUM(player_balances) + SUM(guild_treasuries) = INITIAL_SEED
-
 ```
 
-| Flow    | Direction         | Active Examples                               |
-| ------- | ----------------- | --------------------------------------------- |
-| Faucet  | Treasury → Player | Yield payments, starting grant                |
-| Sink    | Player → Treasury | Trade fees, gate discovery cost, ISO proceeds |
-| Lock    | Player → Treasury | Buy order escrow                              |
-| Unlock  | Treasury → Player | Escrow release (cancel/fill excess)           |
-| Neutral | Player ↔ Player   | Share trades (minus fees to treasury)         |
+| Flow    | Direction         | Active Examples                                               |
+| ------- | ----------------- | ------------------------------------------------------------- |
+| Faucet  | Treasury → Player | Yield payments, starting grant                                |
+| Faucet  | Treasury → Guild  | Yield to guild gate holdings                                  |
+| Faucet  | Guild → Players   | Dividends (manual + auto)                                     |
+| Sink    | Player → Treasury | Trade fees, gate discovery cost, ISO proceeds, guild creation |
+| Sink    | Guild → Treasury  | Guild maintenance                                             |
+| Lock    | Player → Treasury | Buy order escrow                                              |
+| Lock    | Guild → Treasury  | Guild invest escrow                                           |
+| Unlock  | Treasury → Player | Escrow release (cancel/fill excess)                           |
+| Unlock  | Treasury → Guild  | Guild escrow release                                          |
+| Neutral | Player ↔ Player   | Share trades (minus fees to treasury)                         |
+| Neutral | Treasury → Guild  | Guild ISO proceeds                                            |
 
-**Future sinks** (not yet active): guild creation/maintenance, portfolio maintenance, concentration penalties, liquidity decay.
+**Future sinks** (not yet active): portfolio maintenance, concentration penalties, liquidity decay.
 
 ---
 
@@ -60,7 +64,7 @@ treasury_balance + SUM(player_balances) + SUM(guild_treasuries) = INITIAL_SEED
 
 `id` UUID PK · `account_type` ENUM('TREASURY') UQ · `balance_micro` BIGINT ≥0 · `created_at` TZ
 
-### ledger_entries _(append-only — no UPDATE/DELETE)_
+### ledger*entries *(append-only — no UPDATE/DELETE)\_
 
 `id` BIGSERIAL PK · `tick_id` INT NULL FK→ticks · `debit_type`/`credit_type` ENUM('PLAYER','SYSTEM','GUILD') · `debit_id`/`credit_id` UUID · `amount_micro` BIGINT >0 · `entry_type` EntryType · `memo` TEXT · `created_at` TZ
 
@@ -104,9 +108,32 @@ treasury_balance + SUM(player_balances) + SUM(guild_treasuries) = INITIAL_SEED
 
 `gate_id` UUID FK→gates · `player_id` UUID _(plain, NO FK — can hold treasury UUID)_ · `quantity` INT ≥0 · PK: (gate_id, player_id)
 
+### guilds
+
+`id` UUID PK · `name` VARCHAR UQ · `founder_id` UUID FK→players · `treasury_micro` BIGINT ≥0 · `total_shares` INT · `public_float_pct` DECIMAL · `dividend_policy` DividendPolicy · `auto_dividend_pct` DECIMAL NULL · `status` GuildStatus default ACTIVE · `created_at_tick` INT · `maintenance_cost_micro` BIGINT · `missed_maintenance_ticks` INT default 0 · `insolvent_ticks` INT default 0
+
+**GuildStatus**: ACTIVE, INSOLVENT, DISSOLVED
+**DividendPolicy**: MANUAL, AUTO_FIXED_PCT
+
+Property: `balance_micro` ↔ `treasury_micro` (property alias for TransferService compatibility)
+
+### guild_members
+
+`guild_id` UUID FK→guilds · `player_id` UUID FK→players · `role` GuildRole · `joined_at_tick` INT · PK: (guild_id, player_id)
+
+**GuildRole**: LEADER, OFFICER, MEMBER
+
+### guild_shares
+
+`guild_id` UUID FK→guilds · `player_id` UUID _(plain, NO FK — can hold guild.id for ISO float)_ · `quantity` INT ≥0 · PK: (guild_id, player_id)
+
+### guild_gate_holdings
+
+`guild_id` UUID FK→guilds · `gate_id` UUID FK→gates · `quantity` INT ≥0 · PK: (guild_id, gate_id)
+
 ### orders
 
-`id` UUID PK · `player_id` UUID _(plain, NO FK — can hold treasury UUID for ISO)_ · `asset_type` AssetType · `asset_id` UUID · `side` OrderSide · `quantity` INT >0 · `price_limit_micro` BIGINT >0 · `filled_quantity` INT ≥0 default 0 · `escrow_micro` BIGINT ≥0 default 0 · `status` OrderStatus default OPEN · `created_at_tick` INT · `updated_at_tick` INT NULL · `is_system` BOOL default FALSE
+`id` UUID PK · `player_id` UUID _(plain, NO FK — can hold treasury/guild UUID)_ · `guild_id` UUID NULL _(marks guild orders)_ · `asset_type` AssetType · `asset_id` UUID · `side` OrderSide · `quantity` INT >0 · `price_limit_micro` BIGINT >0 · `filled_quantity` INT ≥0 default 0 · `escrow_micro` BIGINT ≥0 default 0 · `status` OrderStatus default OPEN · `created_at_tick` INT · `updated_at_tick` INT NULL · `is_system` BOOL default FALSE
 
 **AssetType**: GATE_SHARE, GUILD_SHARE
 **OrderSide**: BUY, SELL
@@ -127,7 +154,6 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 ## Tick Pipeline (Current State)
 
 ```
-
 1.  Determine tick_number ✅ P3
 2.  Derive seed + create TickRNG ✅ P3
 3.  Insert tick record ✅ P3
@@ -137,19 +163,21 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
     DISCOVER_GATE ✅ P4
     PLACE_ORDER ✅ P5
     CANCEL_ORDER ✅ P5
-    CREATE_GUILD / GUILD_DIVIDEND / GUILD_INVEST 🔲 P6
-7.  System gate spawn + lifecycle + yield ✅ P4
-8.  Create ISO orders for OFFERING gates ✅ P5
-9.  Cancel orders for COLLAPSED gates ✅ P5
-10. Match orders ✅ P5
+    CREATE_GUILD ✅ P6
+    GUILD_DIVIDEND ✅ P6
+    GUILD_INVEST ✅ P6
+7.  System gate spawn + lifecycle + yield ✅ P4 (yield extended P6 for guild holdings)
+7b. Guild lifecycle (maintenance, insolvency, auto-dividends) ✅ P6
+8.  Create ISO orders for OFFERING gates + guild shares ✅ P5 (extended P6)
+9.  Cancel orders for COLLAPSED gates + DISSOLVED guilds ✅ P5 (extended P6)
+10. Match orders ✅ P5 (extended P6 for GUILD_SHARE + guild orders)
 11. Finalize ISO transitions ✅ P5
 12. Update market prices ✅ P5
 13. Roll events 🔲 P8
 14. Anti-exploit maintenance 🔲 P9
 15. Mark PROCESSING intents → EXECUTED ✅ P3
-16. Compute state_hash ✅ P3 (extended P4, P5)
+16. Compute state_hash ✅ P3 (extended P4, P5, P6)
 17. Finalize tick record ✅ P3
-
 ```
 
 ---
@@ -174,29 +202,39 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 | GET    | /market/{asset_type}/{asset_id}        | No   | 5     | Price, bid/ask, volume     |
 | GET    | /market/{asset_type}/{asset_id}/book   | No   | 5     | Aggregated order book      |
 | GET    | /market/{asset_type}/{asset_id}/trades | No   | 5     | Recent trades (paginated)  |
+| GET    | /guilds                                | No   | 6     | List guilds (filter/page)  |
+| GET    | /guilds/{id}                           | No   | 6     | Guild detail + members     |
 
 ---
 
 ## Config Values
 
-| Parameter                | Value                                                 | Phase | Notes                   |
-| ------------------------ | ----------------------------------------------------- | ----- | ----------------------- |
-| DB URL                   | `...asyncpg://dge:dge_dev@postgres:5432/dungeon_gate` | 1     | Docker internal         |
-| Redis URL                | `redis://redis:6379/0`                                | 1     |                         |
-| INITIAL_SEED             | 100,000,000,000 micro                                 | 2     | 100,000 currency        |
-| STARTING_BALANCE         | 10,000,000 micro                                      | 2     | 10 currency             |
-| JWT access expiry        | 15 min                                                | 2     |                         |
-| JWT refresh expiry       | 7 days                                                | 2     |                         |
-| simulation_initial_seed  | 42                                                    | 3     | RNG chain start         |
-| simulation_tick_interval | 5s                                                    | 3     |                         |
-| system_spawn_probability | 0.15                                                  | 4     | ~3 gates/min            |
-| gate_offering_ticks      | 60                                                    | 4     | OFFERING duration       |
-| gate_base_decay_rate     | 0.1                                                   | 4     | Stability decay/tick    |
-| base_fee_rate            | 0.005 (0.5%)                                          | 5     | Minimum trade fee rate  |
-| progressive_fee_rate     | 0.5                                                   | 5     | Fee scaling factor      |
-| fee_scale_micro          | 10,000,000                                            | 5     | Progressive denominator |
-| max_fee_rate             | 0.10 (10%)                                            | 5     | Hard cap on fee rate    |
-| iso_payback_ticks        | 100                                                   | 5     | ISO price derivation    |
+| Parameter                    | Value                                                 | Phase | Notes                   |
+| ---------------------------- | ----------------------------------------------------- | ----- | ----------------------- |
+| DB URL                       | `...asyncpg://dge:dge_dev@postgres:5432/dungeon_gate` | 1     | Docker internal         |
+| Redis URL                    | `redis://redis:6379/0`                                | 1     |                         |
+| INITIAL_SEED                 | 100,000,000,000 micro                                 | 2     | 100,000 currency        |
+| STARTING_BALANCE             | 10,000,000 micro                                      | 2     | 10 currency             |
+| JWT access expiry            | 15 min                                                | 2     |                         |
+| JWT refresh expiry           | 7 days                                                | 2     |                         |
+| simulation_initial_seed      | 42                                                    | 3     | RNG chain start         |
+| simulation_tick_interval     | 5s                                                    | 3     |                         |
+| system_spawn_probability     | 0.15                                                  | 4     | ~3 gates/min            |
+| gate_offering_ticks          | 60                                                    | 4     | OFFERING duration       |
+| gate_base_decay_rate         | 0.1                                                   | 4     | Stability decay/tick    |
+| base_fee_rate                | 0.005 (0.5%)                                          | 5     | Minimum trade fee rate  |
+| progressive_fee_rate         | 0.5                                                   | 5     | Fee scaling factor      |
+| fee_scale_micro              | 10,000,000                                            | 5     | Progressive denominator |
+| max_fee_rate                 | 0.10 (10%)                                            | 5     | Hard cap on fee rate    |
+| iso_payback_ticks            | 100                                                   | 5     | ISO price derivation    |
+| guild_creation_cost_micro    | 50,000,000                                            | 6     | 50 currency             |
+| guild_total_shares           | 1,000                                                 | 6     | Shares per guild        |
+| guild_max_float_pct          | 0.49                                                  | 6     | Max public float        |
+| guild_base_maintenance_micro | 100,000                                               | 6     | 0.1 currency/tick       |
+| guild_maintenance_scale      | 0.001                                                 | 6     | Scale on gate value     |
+| guild_insolvency_threshold   | 3                                                     | 6     | Missed → INSOLVENT      |
+| guild_dissolution_threshold  | 10                                                    | 6     | Insolvent → DISSOLVED   |
+| guild_liquidation_discount   | 0.50                                                  | 6     | Liquidation at 50%      |
 
 <!-- PHASE_CONFIG: Add new config params here after each phase -->
 
@@ -205,31 +243,29 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 ## Folder Structure
 
 ```
-
 dungeon-gate-economy/
 ├── .github/workflows/ci.yml
 ├── backend/
-│ ├── alembic/versions/ # 4 migrations
-│ ├── app/
-│ │ ├── api/ # auth, gates, health, intents, market, orders, players, simulation
-│ │ ├── core/ # auth (JWT/Argon2), deps (get_db, get_redis, get_current_player)
-│ │ ├── models/ # base, gate, intent, ledger, market, player, tick, treasury
-│ │ ├── schemas/ # auth, gate, intent, market, player, simulation
-│ │ ├── services/ # auth, fee_calculator, gate_lifecycle, order_matching, transfer
-│ │ ├── simulation/ # lock, rng, state_hash, tick, worker
-│ │ ├── config.py, database.py, main.py
-│ ├── tests/ # 14 test files, 90 tests
-│ ├── Dockerfile, alembic.ini, pyproject.toml, requirements.txt
+│   ├── alembic/versions/              # 5 migrations
+│   ├── app/
+│   │   ├── api/                       # auth, gates, guilds, health, intents, market, orders, players, simulation
+│   │   ├── core/                      # auth (JWT/Argon2), deps (get_db, get_redis, get_current_player)
+│   │   ├── models/                    # base, gate, guild, intent, ledger, market, player, tick, treasury
+│   │   ├── schemas/                   # auth, gate, guild, intent, market, player, simulation
+│   │   ├── services/                  # auth, fee_calculator, gate_lifecycle, guild_manager, order_matching, transfer
+│   │   ├── simulation/               # lock, rng, state_hash, tick, worker
+│   │   ├── config.py, database.py, main.py
+│   ├── tests/                         # 16 test files, 109 tests
+│   ├── Dockerfile, alembic.ini, pyproject.toml, requirements.txt
 ├── docs/
-│ ├── plan/ # PLAN.md + PHASE_X_PLAN.md files
-│ ├── postman/ # Postman collection
-│ ├── summary/ # SUMMARY_1-5.md
-│ ├── CONTEXT.md # ← THIS FILE
-│ ├── architecture.md, runbook.md
-├── frontend/src/ # .gitkeep only
-├── infra/ # prometheus.yml, grafana/, k6/
+│   ├── plan/                          # PLAN.md + PHASE_X_PLAN.md files
+│   ├── postman/                       # Postman collection
+│   ├── summary/                       # SUMMARY_1-6.md
+│   ├── CONTEXT.md                     # ← THIS FILE
+│   ├── architecture.md, runbook.md
+├── frontend/src/                      # .gitkeep only
+├── infra/                             # prometheus.yml, grafana/, k6/
 ├── .env.example, Makefile, docker-compose.yml
-
 ```
 
 <!-- FOLDER: Update after significant structural changes -->
@@ -249,8 +285,10 @@ dungeon-gate-economy/
 ### 2. Treasury-as-Holder
 
 - `gate_shares.player_id` and `orders.player_id` have **NO FK to players** — treasury UUID sits there directly.
-- Use same pattern for any table where treasury participates as an entity.
+- `guild_shares.player_id` has **NO FK** — guild's own UUID sits there for ISO float.
+- Use same pattern for any table where treasury or guild participates as an entity.
 - Yield distribution **skips treasury-held shares** (no self-payment).
+- Dividend distribution **skips guild-held shares** (no self-payment).
 - ISO trades skip self-transfers (treasury is both seller and escrow holder).
 
 ### 3. Settings Mutation in Tests
@@ -271,22 +309,24 @@ dungeon-gate-economy/
 ### 6. Money Rules
 
 - All currency as BIGINT micro-units (1 currency = 1,000,000 micro).
-- Integer division for pro-rata calculations (remainder stays in treasury).
+- Integer division for pro-rata calculations (remainder stays in treasury/guild).
 - No negative balances ever — deduct what's available, floor at zero.
 - Every balance change through `TransferService.transfer()` with ledger entry.
 
 ### 7. State Hash
 
-- SHA-256 of: treasury balance + player balances (ordered by ID) + gate counts per status + total stability (truncated) + total shares held + open order count + total escrow in BUY orders + total trade count.
+- SHA-256 of: treasury balance + player balances (ordered by ID) + gate counts per status + total stability (truncated) + total shares held + open order count + total escrow in BUY orders + total trade count + guild treasury sum + guild counts per status.
 - Extended each phase with new state dimensions.
 
 ### 8. Escrow Model
 
 - BUY orders: escrow = `quantity × price_limit + max_fee` locked via `transfer(PLAYER → TREASURY, ESCROW_LOCK)`.
+- Guild BUY orders: escrow locked via `transfer(GUILD → TREASURY, ESCROW_LOCK)`.
 - On fill: trade_value + buyer_fee consumed from escrow (stays in treasury). Seller paid via `transfer(TREASURY → SELLER, TRADE_SETTLEMENT)`.
-- On full fill: excess escrow released via `transfer(TREASURY → PLAYER, ESCROW_RELEASE)`.
+- On full fill: excess escrow released via `transfer(TREASURY → PLAYER/GUILD, ESCROW_RELEASE)`.
 - On cancel: full remaining escrow released.
 - ISO: no settlement transfer needed — escrow IS the payment (treasury is seller).
+- Guild ISO: proceeds go to guild treasury via `transfer(TREASURY → GUILD, TRADE_SETTLEMENT)`.
 
 ### 9. Delivery Style
 
@@ -311,6 +351,16 @@ Before writing any code for a new phase, ask the user for the current versions o
 - `tests/conftest.py` (if new fixtures needed)
 - `simulation/state_hash.py` (if extending)
 
+### 12. Guild Patterns
+
+- Guild `balance_micro` property maps to `treasury_micro` — lets TransferService work without modification.
+- `guild_id` on Order (nullable) explicitly marks guild orders — escrow/settlement uses guild treasury.
+- Guild ISO price = `guild_creation_cost_micro // guild_total_shares`.
+- No seller fee on guild ISO (same as gate ISO — bootstrap selling).
+- Maintenance cost = `base + int(gate_value * scale)` — scales with power.
+- Insolvency after N consecutive missed maintenance ticks → 50% yield penalty.
+- Dissolution: liquidate holdings at discount → distribute to shareholders → cancel orders → sweep remainder.
+
 <!-- CONVENTIONS: Add new patterns discovered during implementation -->
 
 ---
@@ -319,7 +369,6 @@ Before writing any code for a new phase, ask the user for the current versions o
 
 | Phase  | One-line Summary                                                            |
 | ------ | --------------------------------------------------------------------------- |
-| **6**  | Player-created guilds with shares, dividends, maintenance, insolvency       |
 | **7**  | Treasury-backed AI bots (market maker, value investor, noise trader)        |
 | **8**  | Stochastic events, news generation, WebSocket real-time feed                |
 | **9**  | Concentration penalties, liquidity decay, portfolio maintenance, float caps |

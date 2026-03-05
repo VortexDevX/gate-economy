@@ -68,7 +68,10 @@ class Order(Base):
     is_system: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
-
+    guild_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    
     @property
     def remaining(self) -> int:
         return self.quantity - self.filled_quantity

@@ -33,7 +33,17 @@ class Settings(BaseSettings):
     fee_scale_micro: int = 10_000_000        # denominator for progressive scaling (10 currency)
     max_fee_rate: float = 0.10               # 10% hard cap on fee rate
     iso_payback_ticks: int = 100             # ticks of yield used to price ISO shares
-
+    
+    # ── Guild Settings ──
+    guild_creation_cost_micro: int = 50_000_000       # 50 currency
+    guild_total_shares: int = 1000
+    guild_max_float_pct: float = 0.49
+    guild_base_maintenance_micro: int = 100_000       # 0.1 currency per tick
+    guild_maintenance_scale: float = 0.001
+    guild_insolvency_threshold: int = 3               # missed ticks → INSOLVENT
+    guild_dissolution_threshold: int = 10             # insolvent ticks → DISSOLVED
+    guild_liquidation_discount: float = 0.50
+    
     # ── Celery ──
     celery_broker_url: str = "redis://redis:6379/0"
 

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.gate import Gate, GateShare
 from app.models.market import Order, OrderStatus, OrderSide, Trade
+from app.models.guild import Guild
 from app.models.player import Player
 from app.models.treasury import AccountType, SystemAccount
 
@@ -85,6 +86,22 @@ async def compute_state_hash(session: AsyncSession) -> str:
         select(func.count(Trade.id))
     )
     total_trades = result.scalar_one()
+    
+    # Guild treasury sum
+    result = await session.execute(
+        select(func.coalesce(func.sum(Guild.treasury_micro), 0))
+    )
+    guild_treasury_total = result.scalar_one()
+
+    # Guild count per status
+    result = await session.execute(
+        select(Guild.status, func.count(Guild.id)).group_by(Guild.status)
+    )
+    guild_status_counts: dict[str, int] = {}
+    for status, count in result.all():
+        guild_status_counts[
+            status.value if hasattr(status, "value") else str(status)
+        ] = count
 
     # Build hash input
     parts = [f"treasury:{treasury_balance}"]
@@ -101,6 +118,11 @@ async def compute_state_hash(session: AsyncSession) -> str:
     parts.append(f"open_orders:{open_orders}")
     parts.append(f"total_escrow:{total_escrow}")
     parts.append(f"total_trades:{total_trades}")
+    
+    # Guild state
+    parts.append(f"guild_treasury:{guild_treasury_total}")
+    for status_name in sorted(guild_status_counts.keys()):
+        parts.append(f"guilds:{status_name}:{guild_status_counts[status_name]}")
 
     hash_input = "|".join(parts).encode("utf-8")
     return hashlib.sha256(hash_input).hexdigest()

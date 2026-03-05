@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.api.auth import router as auth_router
 from app.api.gates import router as gates_router
+from app.api.guilds import router as guilds_router
 from app.api.health import router as health_router
 from app.api.intents import router as intents_router
 from app.api.market import router as market_router
@@ -227,6 +228,7 @@ def create_app() -> FastAPI:
     app.include_router(intents_router)
     app.include_router(simulation_router)
     app.include_router(gates_router)
+    app.include_router(guilds_router)
     app.include_router(market_router)
     app.include_router(orders_router)
 

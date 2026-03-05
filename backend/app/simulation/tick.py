@@ -14,6 +14,13 @@ from app.services.gate_lifecycle import (
     process_discover_intent,
     system_spawn_gate,
 )
+from app.services.guild_manager import (
+    auto_dividends,
+    guild_maintenance,
+    process_create_guild,
+    process_guild_dividend,
+    process_guild_invest,
+)
 from app.services.order_matching import (
     cancel_collapsed_gate_orders,
     create_iso_orders,
@@ -82,7 +89,30 @@ async def _process_intents(
                 tick_id=tick_id,
                 treasury_id=treasury_id,
             )
-        # Phase 6+: CREATE_GUILD, GUILD_DIVIDEND, GUILD_INVEST
+        elif intent.intent_type == IntentType.CREATE_GUILD:
+            await process_create_guild(
+                session=session,
+                intent=intent,
+                tick_number=tick_number,
+                tick_id=tick_id,
+                treasury_id=treasury_id,
+            )
+        elif intent.intent_type == IntentType.GUILD_DIVIDEND:
+            await process_guild_dividend(
+                session=session,
+                intent=intent,
+                tick_number=tick_number,
+                tick_id=tick_id,
+                treasury_id=treasury_id,
+            )
+        elif intent.intent_type == IntentType.GUILD_INVEST:
+            await process_guild_invest(
+                session=session,
+                intent=intent,
+                tick_number=tick_number,
+                tick_id=tick_id,
+                treasury_id=treasury_id,
+            )
 
 
 # ── Gate advancement ──
@@ -99,6 +129,20 @@ async def _advance_gates(
     await system_spawn_gate(session, tick_number, tick_id, rng, treasury_id)
     await advance_gate_lifecycle(session, tick_number, rng)
     await distribute_yield(session, tick_id, treasury_id)
+
+
+# ── Guild lifecycle ──
+
+
+async def _guild_lifecycle(
+    session: AsyncSession,
+    tick_number: int,
+    tick_id: int,
+    treasury_id: "uuid.UUID",  # type: ignore
+) -> None:
+    """Per-tick guild maintenance, insolvency, and auto-dividends."""
+    await guild_maintenance(session, tick_number, tick_id, treasury_id)
+    await auto_dividends(session, tick_number, tick_id)
 
 
 # ── Main pipeline ──
@@ -143,7 +187,7 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
         session.add(tick)
         await session.flush()  # populate tick.id for FK references
 
-        # Load treasury ID (needed for gate + market operations)
+        # Load treasury ID (needed for gate + market + guild operations)
         result = await session.execute(
             select(SystemAccount.id).where(
                 SystemAccount.account_type == AccountType.TREASURY
@@ -174,10 +218,15 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
             session, tick_number, tick.id, rng, treasury_id
         )
 
-        # 8. Create ISO orders for OFFERING gates
+        # 7b. Guild lifecycle (maintenance, insolvency, auto-dividends)
+        await _guild_lifecycle(
+            session, tick_number, tick.id, treasury_id
+        )
+
+        # 8. Create ISO orders for OFFERING gates + guild shares
         await create_iso_orders(session, tick_number, treasury_id)
 
-        # 9. Cancel orders for COLLAPSED gates
+        # 9. Cancel orders for COLLAPSED gates + DISSOLVED guilds
         await cancel_collapsed_gate_orders(
             session, tick_number, tick.id, treasury_id
         )

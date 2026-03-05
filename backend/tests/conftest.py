@@ -19,6 +19,7 @@ from app.models.player import Player
 from app.models.tick import Tick
 from app.models.treasury import AccountType, SystemAccount
 from app.models.market import MarketPrice, Order, Trade
+from app.models.guild import Guild, GuildGateHolding, GuildMember, GuildShare
 
 
 def _make_engine():
@@ -34,6 +35,10 @@ async def _reset_database(factory) -> None:
     async with factory() as session:
         # Delete in FK-safe order
         await session.execute(delete(Intent))
+        await session.execute(delete(GuildGateHolding))
+        await session.execute(delete(GuildShare))
+        await session.execute(delete(GuildMember))
+        await session.execute(delete(Guild))
         await session.execute(delete(Trade))
         await session.execute(delete(Order))
         await session.execute(delete(MarketPrice))
