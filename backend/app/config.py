@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     guild_insolvency_threshold: int = 3               # missed ticks → INSOLVENT
     guild_dissolution_threshold: int = 10             # insolvent ticks → DISSOLVED
     guild_liquidation_discount: float = 0.50
+
+    # ── AI Trader Settings ──
+    ai_market_maker_budget_micro: int = 2_000_000_000   # 2,000 currency
+    ai_value_investor_budget_micro: int = 1_000_000_000  # 1,000 currency
+    ai_noise_trader_budget_micro: int = 500_000_000      # 500 currency
+    ai_mm_spread: float = 0.05                           # 5% bid/ask spread
+    ai_mm_order_qty: int = 5                             # shares per MM order
+    ai_vi_buy_discount: float = 0.30                     # buy when price < fair*(1-this)
+    ai_vi_sell_premium: float = 0.30                     # sell when price > fair*(1+this)
+    ai_noise_activity: float = 0.40                      # probability NT acts per tick
+    ai_noise_max_qty: int = 3                            # max shares per noise trade
     
     # ── Celery ──
     celery_broker_url: str = "redis://redis:6379/0"

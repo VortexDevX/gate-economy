@@ -20,6 +20,9 @@ from app.config import settings
 from app.database import get_session_factory
 from app.models.gate import GateRank, GateRankProfile
 from app.models.treasury import AccountType, SystemAccount
+from app.models.ledger import AccountEntityType, EntryType
+from app.models.player import Player
+from app.services.transfer import transfer
 
 
 def setup_logging() -> None:
@@ -176,7 +179,57 @@ async def seed_gate_rank_profiles() -> None:
         await session.commit()
         log.info("gate_rank_profiles_seeded", count=len(profiles))
 
+AI_BOTS = [
+    ("ai_market_maker", "ai_mm@system.internal", settings.ai_market_maker_budget_micro),
+    ("ai_value_investor", "ai_vi@system.internal", settings.ai_value_investor_budget_micro),
+    ("ai_noise_trader", "ai_nt@system.internal", settings.ai_noise_trader_budget_micro),
+]
 
+
+async def seed_ai_players() -> None:
+    """Create AI trader players with treasury-funded budgets. Idempotent."""
+    log = structlog.get_logger()
+    factory = get_session_factory()
+    async with factory() as session:
+        result = await session.execute(
+            select(SystemAccount.id).where(
+                SystemAccount.account_type == AccountType.TREASURY
+            )
+        )
+        treasury_id = result.scalar_one()
+
+        for username, email, budget in AI_BOTS:
+            result = await session.execute(
+                select(Player).where(Player.username == username)
+            )
+            if result.scalar_one_or_none() is not None:
+                log.info("ai_player_exists", username=username)
+                continue
+
+            player = Player(
+                username=username,
+                email=email,
+                password_hash="!ai-no-login",
+                balance_micro=0,
+                is_ai=True,
+            )
+            session.add(player)
+            await session.flush()
+
+            await transfer(
+                session=session,
+                from_type=AccountEntityType.SYSTEM,
+                from_id=treasury_id,
+                to_type=AccountEntityType.PLAYER,
+                to_id=player.id,
+                amount=budget,
+                entry_type=EntryType.AI_BUDGET,
+                memo=f"AI budget: {username}",
+            )
+            log.info("ai_player_seeded", username=username, budget_micro=budget)
+
+        await session.commit()
+        
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
@@ -184,6 +237,7 @@ async def lifespan(app: FastAPI):
     log.info("application_startup", version=app.version)
     await seed_treasury()
     await seed_gate_rank_profiles()
+    await seed_ai_players()
     yield
     log.info("application_shutdown")
 

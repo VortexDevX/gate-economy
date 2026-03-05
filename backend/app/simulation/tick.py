@@ -32,6 +32,7 @@ from app.services.order_matching import (
 )
 from app.simulation.rng import TickRNG, derive_seed
 from app.simulation.state_hash import compute_state_hash
+from app.services.ai_traders import run_ai_traders
 
 logger = structlog.get_logger()
 
@@ -222,7 +223,10 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
         await _guild_lifecycle(
             session, tick_number, tick.id, treasury_id
         )
-
+        
+        # 7c. AI traders (cancel old orders, run strategies)
+        await run_ai_traders(session, tick_number, tick.id, treasury_id, rng)
+        
         # 8. Create ISO orders for OFFERING gates + guild shares
         await create_iso_orders(session, tick_number, treasury_id)
 

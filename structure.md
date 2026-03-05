@@ -1,7 +1,4 @@
 📁 dungeon-gate-economy/
-├── 📁 .github/
-│   └── 📁 workflows/
-│       └── 📄 ci.yml
 ├── 📁 backend/
 │   ├── 📁 alembic/
 │   │   ├── 📁 versions/
@@ -51,6 +48,7 @@
 │   │   │   └── 📄 simulation.py
 │   │   ├── 📁 services/
 │   │   │   ├── 📄 __init__.py
+│   │   │   ├── 📄 ai_traders.py
 │   │   │   ├── 📄 auth.py
 │   │   │   ├── 📄 fee_calculator.py
 │   │   │   ├── 📄 gate_lifecycle.py
@@ -71,6 +69,7 @@
 │   ├── 📁 tests/
 │   │   ├── 📄 __init__.py
 │   │   ├── 📄 conftest.py
+│   │   ├── 📄 test_ai_traders.py
 │   │   ├── 📄 test_auth.py
 │   │   ├── 📄 test_conservation.py
 │   │   ├── 📄 test_fee_calculator.py
@@ -99,6 +98,7 @@
 │   │   ├── 📄 PHASE_4_PLAN.md
 │   │   ├── 📄 PHASE_5_PLAN.md
 │   │   ├── 📄 PHASE_6_PLAN.md
+│   │   ├── 📄 PHASE_7_PLAN.md
 │   │   └── 📄 PLAN.md
 │   ├── 📁 postman/
 │   │   └── 📄 DungeonGateEconomy.postman_collection.json
@@ -108,7 +108,8 @@
 │   │   ├── 📄 SUMMARY_3.md
 │   │   ├── 📄 SUMMARY_4.md
 │   │   ├── 📄 SUMMARY_5.md
-│   │   └── 📄 SUMMARY_6.md
+│   │   ├── 📄 SUMMARY_6.md
+│   │   └── 📄 SUMMARY_7.md
 │   ├── 📄 CONTEXT.md
 │   ├── 📄 architecture.md
 │   └── 📄 runbook.md

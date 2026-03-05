@@ -53,3 +53,7 @@ class TickRNG:
     def choices(self, population: list, weights: list[float] | None = None, k: int = 1) -> list:
         """Weighted random selection with replacement."""
         return self._rng.choices(population, weights=weights, k=k)
+
+    def shuffle(self, seq: list) -> None:
+        """Shuffle list in-place (deterministic)."""
+        self._rng.shuffle(seq)
