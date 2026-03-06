@@ -8,6 +8,8 @@ from app.config import settings
 from app.models.intent import Intent, IntentStatus, IntentType
 from app.models.tick import Tick
 from app.models.treasury import AccountType, SystemAccount
+from app.services.ai_traders import run_ai_traders
+from app.services.event_engine import roll_events
 from app.services.gate_lifecycle import (
     advance_gate_lifecycle,
     distribute_yield,
@@ -21,6 +23,7 @@ from app.services.guild_manager import (
     process_guild_dividend,
     process_guild_invest,
 )
+from app.services.news_generator import generate_tick_news
 from app.services.order_matching import (
     cancel_collapsed_gate_orders,
     create_iso_orders,
@@ -30,20 +33,14 @@ from app.services.order_matching import (
     process_place_order,
     update_market_prices,
 )
+from app.services.realtime import publish_tick_update
 from app.simulation.rng import TickRNG, derive_seed
 from app.simulation.state_hash import compute_state_hash
-from app.services.ai_traders import run_ai_traders
 
 logger = structlog.get_logger()
 
 
 # ── No-op hooks — filled in by future phases ──
-
-
-async def _roll_events(
-    session: AsyncSession, tick_number: int, rng: TickRNG
-) -> None:
-    """Phase 8+: Roll stochastic events."""
 
 
 async def _anti_exploit_maintenance(
@@ -223,10 +220,10 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
         await _guild_lifecycle(
             session, tick_number, tick.id, treasury_id
         )
-        
+
         # 7c. AI traders (cancel old orders, run strategies)
         await run_ai_traders(session, tick_number, tick.id, treasury_id, rng)
-        
+
         # 8. Create ISO orders for OFFERING gates + guild shares
         await create_iso_orders(session, tick_number, treasury_id)
 
@@ -244,8 +241,15 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
         # 12. Update market prices
         await update_market_prices(session, tick_number, tick.id)
 
-        # 13. Roll events (Phase 8+)
-        await _roll_events(session, tick_number, rng)
+        # 13. Roll events
+        events = await roll_events(
+            session, tick_number, tick.id, rng, treasury_id
+        )
+
+        # 13b. Generate news
+        news_items = await generate_tick_news(
+            session, tick_number, tick.id, events
+        )
 
         # 14. Anti-exploit maintenance (Phase 9+)
         await _anti_exploit_maintenance(session, tick_number, rng)
@@ -274,5 +278,8 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
             intent_count=len(intents),
             state_hash=state_hash[:16],
         )
+
+        # 18. Publish realtime update (fire-and-forget, after commit)
+        await publish_tick_update(tick_number, news_items)
 
         return tick

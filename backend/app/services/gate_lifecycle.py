@@ -98,24 +98,19 @@ def _roll_rank_upgrade(rng: TickRNG, min_rank: GateRank) -> GateRank:
 
 # ── Public API (called from tick pipeline) ──
 
-
-async def system_spawn_gate(
+async def spawn_gate(
     session: AsyncSession,
     tick_number: int,
     tick_id: int,
     rng: TickRNG,
     treasury_id: uuid.UUID,
 ) -> Gate | None:
-    """Roll for a system-spawned gate. Returns Gate if spawned, else None."""
-    if rng.random() >= settings.system_spawn_probability:
-        return None
-
+    """Unconditionally spawn one system gate. Used by system_spawn and events."""
     profiles = await _load_profiles(session)
     if not profiles:
         logger.warning("no_rank_profiles_found")
         return None
 
-    # Weighted random rank selection
     ranks = list(profiles.keys())
     weights = [float(profiles[r].spawn_weight) for r in ranks]
     selected_rank = rng.choices(ranks, weights=weights, k=1)[0]
@@ -129,6 +124,18 @@ async def system_spawn_gate(
         treasury_id=treasury_id,
         discovery_type=DiscoveryType.SYSTEM,
     )
+
+async def system_spawn_gate(
+    session: AsyncSession,
+    tick_number: int,
+    tick_id: int,
+    rng: TickRNG,
+    treasury_id: uuid.UUID,
+) -> Gate | None:
+    """Roll for a system-spawned gate. Returns Gate if spawned, else None."""
+    if rng.random() >= settings.system_spawn_probability:
+        return None
+    return await spawn_gate(session, tick_number, tick_id, rng, treasury_id)
 
 
 async def process_discover_intent(

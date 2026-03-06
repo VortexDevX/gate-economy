@@ -16,6 +16,8 @@ from app.api.market import router as market_router
 from app.api.orders import router as orders_router
 from app.api.players import router as players_router
 from app.api.simulation import router as simulation_router
+from app.api.news import router as news_router
+from app.api.ws import router as ws_router
 from app.config import settings
 from app.database import get_session_factory
 from app.models.gate import GateRank, GateRankProfile
@@ -285,6 +287,8 @@ def create_app() -> FastAPI:
     app.include_router(guilds_router)
     app.include_router(market_router)
     app.include_router(orders_router)
+    app.include_router(news_router)
+    app.include_router(ws_router)
 
     return app
 

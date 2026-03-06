@@ -55,6 +55,20 @@ class Settings(BaseSettings):
     ai_noise_activity: float = 0.40                      # probability NT acts per tick
     ai_noise_max_qty: int = 3                            # max shares per noise trade
     
+    # ── Event Settings ──
+    event_probability: float = 0.10
+    event_stability_surge_min: float = 5.0
+    event_stability_surge_max: float = 15.0
+    event_stability_crisis_min: float = 5.0
+    event_stability_crisis_max: float = 15.0
+    event_market_shock_min: float = 2.0
+    event_market_shock_max: float = 5.0
+    event_yield_boom_min_multiplier: float = 2.0
+    event_yield_boom_max_multiplier: float = 4.0
+    event_discovery_surge_min: int = 1
+    event_discovery_surge_max: int = 3
+    news_large_trade_threshold_micro: int = 1_000_000
+    
     # ── Celery ──
     celery_broker_url: str = "redis://redis:6379/0"
 

@@ -20,6 +20,8 @@ from app.models.tick import Tick
 from app.models.treasury import AccountType, SystemAccount
 from app.models.market import MarketPrice, Order, Trade
 from app.models.guild import Guild, GuildGateHolding, GuildMember, GuildShare
+from app.models.event import Event
+from app.models.news import News
 
 
 def _make_engine():
@@ -34,6 +36,8 @@ async def _reset_database(factory) -> None:
     """Wipe all test data and reset treasury to INITIAL_SEED."""
     async with factory() as session:
         # Delete in FK-safe order
+        await session.execute(delete(Event))
+        await session.execute(delete(News))
         await session.execute(delete(Intent))
         await session.execute(delete(GuildGateHolding))
         await session.execute(delete(GuildShare))

@@ -7,3 +7,5 @@ from app.models.market import MarketPrice, Order, Trade  # noqa: F401
 from app.models.player import Player  # noqa: F401
 from app.models.tick import Tick  # noqa: F401
 from app.models.treasury import SystemAccount  # noqa: F401
+from app.models.event import Event  # noqa: F401
+from app.models.news import News  # noqa: F401
