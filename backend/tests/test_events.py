@@ -49,7 +49,7 @@ async def _make_gate(db, status=GateStatus.ACTIVE, stability=80.0,
 
 
 @pytest.mark.asyncio
-async def test_event_fires_when_probability_passes(db, funded_player_id):
+async def test_event_fires_when_probability_passes(db, funded_player_id, pause_simulation):
     tick, treasury_id = await _setup(db)
     gate = await _make_gate(db)
     db.add(GateShare(gate_id=gate.id, player_id=funded_player_id, quantity=50))

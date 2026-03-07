@@ -24,6 +24,7 @@ from app.services.guild_manager import (
     process_guild_invest,
 )
 from app.services.news_generator import generate_tick_news
+from app.services.leaderboard import check_season, update_leaderboard
 from app.services.order_matching import (
     cancel_collapsed_gate_orders,
     create_iso_orders,
@@ -244,6 +245,11 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
 
         # 14. Anti-exploit maintenance (Phase 9+)
         await run_anti_exploit_maintenance(session, tick_number, tick.id, treasury_id)
+    
+        # 14b. Leaderboard & season updates
+        await check_season(session, tick_number, tick.id)
+        if tick_number % settings.net_worth_update_interval == 0:
+            await update_leaderboard(session, tick_number, tick.id)
 
         # 15. Mark remaining PROCESSING intents as EXECUTED
         #     (REJECTED intents keep their status from step 6)

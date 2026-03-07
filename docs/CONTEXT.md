@@ -1,7 +1,7 @@
 # DGE — Build Context
 
 > **Usage**: Paste this into every new AI chat after the system prompt.
-> Then paste the current phase's subplan (e.g., `docs/plan/PHASE_10_PLAN.md`).
+> Then paste the current phase's subplan (e.g., `docs/plan/PHASE_11_PLAN.md`).
 > That's it — two documents total.
 
 ---
@@ -19,18 +19,18 @@
 | 7   | AI Traders                  | ✅ Done | 20    | 129              |
 | 8   | Events, News & Real-time    | ✅ Done | 19    | 148              |
 | 9   | Anti-Exploit & Balance      | ✅ Done | 17    | 165              |
-| 10  | Leaderboards & Seasons      | 🔲 NEXT | —     | —                |
-| 11  | Admin & Observability       | 🔲      | —     | —                |
+| 10  | Leaderboards & Seasons      | ✅ Done | 20    | 185              |
+| 11  | Admin & Observability       | 🔲 NEXT | —     | —                |
 | 12  | Frontend                    | 🔲      | —     | —                |
 | 13  | Hardening & Launch Prep     | 🔲      | —     | —                |
 
-**Baseline: 165 tests passing**
+**Baseline: 185 tests passing**
 
 ---
 
 ## Economic Model
 
-**Hard invariant** (verified every tick — violation halts simulation):
+**Hard invariant** (must always hold; currently verified by tests, not a per-tick runtime halt):
 
 ```
 treasury_balance + SUM(player_balances) + SUM(guild_treasuries) = INITIAL_SEED
@@ -63,7 +63,7 @@ treasury_balance + SUM(player_balances) + SUM(guild_treasuries) = INITIAL_SEED
 
 `id` UUID PK · `account_type` ENUM('TREASURY') UQ · `balance_micro` BIGINT ≥0 · `created_at` TZ
 
-### ledger*entries *(append-only — no UPDATE/DELETE)\_
+### ledger_entries _(append-only — no UPDATE/DELETE)_
 
 `id` BIGSERIAL PK · `tick_id` INT NULL FK→ticks · `debit_type`/`credit_type` ENUM('PLAYER','SYSTEM','GUILD') · `debit_id`/`credit_id` UUID · `amount_micro` BIGINT >0 · `entry_type` EntryType · `memo` TEXT · `created_at` TZ
 
@@ -160,6 +160,20 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 
 **NewsCategory**: GATE, MARKET, GUILD, WORLD
 
+### player_net_worth
+
+`player_id` UUID PK FK→players · `net_worth_micro` BIGINT default 0 · `score_micro` BIGINT default 0 · `balance_micro` BIGINT default 0 · `portfolio_micro` BIGINT default 0 · `last_active_tick` INT default 0 · `updated_at_tick` INT default 0
+
+### seasons
+
+`id` SERIAL PK · `season_number` INT UQ · `start_tick` INT · `end_tick` INT NULL · `status` SeasonStatus default ACTIVE · `created_at` TZ
+
+**SeasonStatus**: ACTIVE, COMPLETED
+
+### season_results
+
+`season_id` INT PK FK→seasons · `player_id` UUID PK FK→players · `final_rank` INT · `final_score_micro` BIGINT · `final_net_worth_micro` BIGINT
+
 ---
 
 ## Tick Pipeline (Current State)
@@ -188,8 +202,9 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 13. Roll events ✅ P8
 13b. Generate news ✅ P8
 14. Anti-exploit maintenance ✅ P9
+14b. Leaderboard & season updates ✅ P10
 15. Mark PROCESSING intents → EXECUTED ✅ P3
-16. Compute state_hash ✅ P3 (extended P4, P5, P6)
+16. Compute state_hash ✅ P3 (extended P4, P5, P6, P10)
 17. Finalize tick record ✅ P3
 18. Publish realtime update (after commit) ✅ P8
 ```
@@ -220,6 +235,10 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 | GET    | /guilds/{id}                           | No   | 6     | Guild detail + members     |
 | GET    | /news                                  | No   | 8     | Paginated news feed        |
 | WS     | /ws                                    | No   | 8     | Real-time tick updates     |
+| GET    | /leaderboard                           | No   | 10    | Paginated rankings         |
+| GET    | /leaderboard/me                        | Yes  | 10    | Player's rank + breakdown  |
+| GET    | /seasons                               | No   | 10    | List seasons (paginated)   |
+| GET    | /seasons/current                       | No   | 10    | Current active season      |
 
 ---
 
@@ -273,6 +292,12 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 | liquidity_decay_inactive_ticks   | 200                                                   | 9     | Ticks without trade      |
 | liquidity_decay_rate             | 0.0005                                                | 9     | 0.05% holding value/tick |
 | max_player_ownership_pct         | 0.50                                                  | 9     | Max 50% of gate shares   |
+| net_worth_update_interval        | 12                                                    | 10    | Update every N ticks     |
+| leaderboard_size                 | 100                                                   | 10    | Max API entries          |
+| leaderboard_decay_rate           | 0.0001                                                | 10    | 0.01% per inactive tick  |
+| leaderboard_decay_inactive_ticks | 100                                                   | 10    | Grace period             |
+| leaderboard_decay_floor          | 0.50                                                  | 10    | Min decay multiplier     |
+| season_duration_ticks            | 17280                                                 | 10    | ~1 day at 5s/tick        |
 
 <!-- PHASE_CONFIG: Add new config params here after each phase -->
 
@@ -284,21 +309,21 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 dungeon-gate-economy/
 ├── .github/workflows/ci.yml
 ├── backend/
-│   ├── alembic/versions/              # 6 migrations
+│   ├── alembic/versions/              # 7 migrations
 │   ├── app/
-│   │   ├── api/                       # auth, gates, guilds, health, intents, market, news, orders, players, simulation, ws
+│   │   ├── api/                       # auth, gates, guilds, health, intents, leaderboard, market, news, orders, players, simulation, ws
 │   │   ├── core/                      # auth (JWT/Argon2), deps (get_db, get_redis, get_current_player)
-│   │   ├── models/                    # base, event, gate, guild, intent, ledger, market, news, player, tick, treasury
-│   │   ├── schemas/                   # auth, gate, guild, intent, market, news, player, simulation
-│   │   ├── services/                  # ai_traders, anti_exploit, auth, event_engine, fee_calculator, gate_lifecycle, guild_manager, news_generator, order_matching, realtime, transfer
+│   │   ├── models/                    # base, event, gate, guild, intent, leaderboard, ledger, market, news, player, tick, treasury
+│   │   ├── schemas/                   # auth, gate, guild, intent, leaderboard, market, news, player, simulation
+│   │   ├── services/                  # ai_traders, anti_exploit, auth, event_engine, fee_calculator, gate_lifecycle, guild_manager, leaderboard, news_generator, order_matching, realtime, transfer
 │   │   ├── simulation/               # lock, rng, state_hash, tick, worker
 │   │   ├── config.py, database.py, main.py
-│   ├── tests/                         # 21 test files, 165 tests
+│   ├── tests/                         # 22 test files, 185 tests
 │   ├── Dockerfile, alembic.ini, pyproject.toml, requirements.txt
 ├── docs/
 │   ├── plan/                          # PLAN.md + PHASE_X_PLAN.md files
 │   ├── postman/                       # Postman collection
-│   ├── summary/                       # SUMMARY_1-9.md
+│   ├── summary/                       # SUMMARY_1-10.md
 │   ├── CONTEXT.md                     # ← THIS FILE
 │   ├── architecture.md, runbook.md
 ├── frontend/src/                      # .gitkeep only
@@ -316,8 +341,8 @@ dungeon-gate-economy/
 
 - **Autouse fixture `_clean_state`** wipes ALL data and resets treasury to INITIAL_SEED before every test. Never assume leftover state.
 - **Autouse fixture `_disable_anti_exploit`** sets anti-exploit rates to 0.0 globally. Tests that need anti-exploit re-enable via local fixture.
+- **Autouse `pause_simulation`** — `_clean_state` depends on `pause_simulation`, which acquires the Redis simulation lock before every test. Prevents the Celery worker from running ticks concurrently with tests.
 - **NullPool engines** per test fixture — avoids asyncio event loop binding issues.
-- **`pause_simulation`** fixture holds Redis lock to prevent Celery worker from running ticks during tests.
 - **`funded_player_id`** fixture creates a player with `starting_balance_micro` properly debited from treasury — use for tests needing a player with funds.
 - **`test_player_id`** fixture creates a player with 0 balance — use when funds are not needed.
 
@@ -339,6 +364,7 @@ dungeon-gate-economy/
 
 - Adding values to PostgreSQL enums requires manual `ALTER TYPE ... ADD VALUE IF NOT EXISTS` in the migration.
 - **Alembic autogenerate does NOT handle this** — always check and edit migration SQL.
+- New enums + new tables: autogenerate via `make migration msg="..."` works fine.
 
 ### 5. Intent Processing
 
@@ -354,7 +380,7 @@ dungeon-gate-economy/
 
 ### 7. State Hash
 
-- SHA-256 of: treasury balance + player balances (ordered by ID) + gate counts per status + total stability (truncated) + total shares held + open order count + total escrow in BUY orders + total trade count + guild treasury sum + guild counts per status.
+- SHA-256 of: treasury balance + player balances (ordered by ID) + gate counts per status + total stability (truncated) + total shares held + open order count + total escrow in BUY orders + total trade count + guild treasury sum + guild counts per status + season count + active season count.
 - Extended each phase with new state dimensions.
 
 ### 8. Escrow Model
@@ -432,6 +458,21 @@ Before writing any code for a new phase, ask the user for the current versions o
 - AI players subject to portfolio/concentration/decay same as humans.
 - Global autouse fixture disables anti-exploit rates in tests; `_enable_anti_exploit` fixture re-enables for anti-exploit-specific tests.
 
+### 16. Leaderboard & Season Patterns
+
+- Net worth = balance + portfolio (gate shares + guild shares). Escrow already deducted from balance.
+- Portfolio valuation reuses `_share_value_micro` from anti_exploit — market price with fundamental fallback.
+- Guild share fallback price: `guild_creation_cost // guild_total_shares`.
+- Treasury-held and guild-self-held shares excluded from player portfolios.
+- Activity derived from executed intents (via tick join) and non-system orders.
+- Score decay: linear after grace period, floored at 50% of net worth.
+- Leaderboard updated every N ticks (expensive batch); season checked every tick (time-critical).
+- Season creation uses savepoints to handle concurrent inserts gracefully.
+- AI players included in computation for data completeness; filtered at API layer.
+- API tests authenticate via register → login → use `access_token` (register returns `PlayerResponse`, not tokens).
+- API tests insert `PlayerNetWorth` directly rather than triggering full leaderboard computation.
+- `SimulationLock` accepts optional `lock_key` parameter for test isolation from global pause.
+
 <!-- CONVENTIONS: Add new patterns discovered during implementation -->
 
 ---
@@ -440,7 +481,6 @@ Before writing any code for a new phase, ask the user for the current versions o
 
 | Phase  | One-line Summary                                                       |
 | ------ | ---------------------------------------------------------------------- |
-| **10** | Net worth leaderboards with decay, seasonal resets                     |
 | **11** | Admin API, tunable parameters, Prometheus/Grafana, k6 load tests       |
 | **12** | React frontend (all player-facing features)                            |
 | **13** | Replay tests, conservation soak, fuzz, security audit, load test, docs |
@@ -459,5 +499,3 @@ After completing each phase:
 6. 📁 **Folder Structure** — update if significant new dirs/files
 7. 📝 **Conventions** — add any new patterns discovered
 8. 🗑️ **Upcoming Phases** — remove completed phase from the table
-
----

@@ -23,6 +23,7 @@ from app.models.market import MarketPrice, Order, Trade
 from app.models.guild import Guild, GuildGateHolding, GuildMember, GuildShare
 from app.models.event import Event
 from app.models.news import News
+from app.models.leaderboard import PlayerNetWorth, Season, SeasonResult
 
 
 def _make_engine():
@@ -39,6 +40,9 @@ async def _reset_database(factory) -> None:
         # Delete in FK-safe order
         await session.execute(delete(Event))
         await session.execute(delete(News))
+        await session.execute(delete(SeasonResult))
+        await session.execute(delete(Season))
+        await session.execute(delete(PlayerNetWorth))
         await session.execute(delete(Intent))
         await session.execute(delete(GuildGateHolding))
         await session.execute(delete(GuildShare))
@@ -76,7 +80,7 @@ async def _reset_database(factory) -> None:
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def _clean_state():
+async def _clean_state(pause_simulation):
     """Reset DB to pristine state before each test.
 
     Ensures no test can poison another via committed state.

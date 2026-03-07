@@ -8,6 +8,7 @@ from app.models.market import Order, OrderStatus, OrderSide, Trade
 from app.models.guild import Guild
 from app.models.player import Player
 from app.models.treasury import AccountType, SystemAccount
+from app.models.leaderboard import Season, SeasonStatus
 
 
 async def compute_state_hash(session: AsyncSession) -> str:
@@ -103,6 +104,17 @@ async def compute_state_hash(session: AsyncSession) -> str:
             status.value if hasattr(status, "value") else str(status)
         ] = count
 
+    # Season state
+    result = await session.execute(
+        select(func.count(Season.id)).where(
+            Season.status == SeasonStatus.ACTIVE
+        )
+    )
+    active_seasons = result.scalar_one()
+
+    result = await session.execute(select(func.count(Season.id)))
+    total_seasons = result.scalar_one()
+    
     # Build hash input
     parts = [f"treasury:{treasury_balance}"]
     for player_id, balance in player_rows:
@@ -123,6 +135,9 @@ async def compute_state_hash(session: AsyncSession) -> str:
     parts.append(f"guild_treasury:{guild_treasury_total}")
     for status_name in sorted(guild_status_counts.keys()):
         parts.append(f"guilds:{status_name}:{guild_status_counts[status_name]}")
+        
+    # Season state
+    parts.append(f"seasons:{total_seasons}:{active_seasons}")
 
     hash_input = "|".join(parts).encode("utf-8")
     return hashlib.sha256(hash_input).hexdigest()

@@ -17,6 +17,7 @@ from app.api.orders import router as orders_router
 from app.api.players import router as players_router
 from app.api.simulation import router as simulation_router
 from app.api.news import router as news_router
+from app.api.leaderboard import router as leaderboard_router
 from app.api.ws import router as ws_router
 from app.config import settings
 from app.database import get_session_factory
@@ -288,6 +289,7 @@ def create_app() -> FastAPI:
     app.include_router(market_router)
     app.include_router(orders_router)
     app.include_router(news_router)
+    app.include_router(leaderboard_router)
     app.include_router(ws_router)
 
     return app

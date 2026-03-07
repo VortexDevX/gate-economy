@@ -21,9 +21,12 @@ class SimulationLock:
     the lock expires and another worker can take over.
     """
 
-    def __init__(self, redis: Redis, worker_id: str) -> None:
+    def __init__(
+        self, redis: Redis, worker_id: str, lock_key: str = LOCK_KEY
+    ) -> None:
         self._redis = redis
         self._worker_id = worker_id
+        self._lock_key = lock_key
 
     async def acquire(self) -> bool:
         """Attempt to acquire the leadership lock.
@@ -31,7 +34,7 @@ class SimulationLock:
         Returns True if acquired, False if another worker holds it.
         """
         result = await self._redis.set(
-            LOCK_KEY,
+            self._lock_key,
             self._worker_id,
             nx=True,
             ex=LOCK_TTL_SECONDS,
@@ -47,7 +50,7 @@ class SimulationLock:
         result = await self._redis.eval(
             _RELEASE_SCRIPT,
             1,
-            LOCK_KEY, # type: ignore
+            self._lock_key, # type: ignore
             self._worker_id, # type: ignore
         )
         return result == 1
