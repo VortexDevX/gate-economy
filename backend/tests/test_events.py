@@ -167,7 +167,7 @@ async def test_discovery_surge_spawns_gates(db):
 
 
 @pytest.mark.asyncio
-async def test_event_skipped_no_valid_targets(db):
+async def test_event_skipped_no_valid_targets(db, pause_simulation):
     """Handler returns None when no ACTIVE/UNSTABLE gates exist."""
     tick, treasury_id = await _setup(db)
     rng = TickRNG(99)

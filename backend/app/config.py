@@ -68,6 +68,14 @@ class Settings(BaseSettings):
     event_discovery_surge_min: int = 1
     event_discovery_surge_max: int = 3
     news_large_trade_threshold_micro: int = 1_000_000
+
+    # ── Anti-Exploit Settings ──
+    portfolio_maintenance_rate: float = 0.0001        # 0.01% of holding value per tick
+    concentration_threshold_pct: float = 0.30         # penalty above 30% ownership
+    concentration_penalty_rate: float = 0.001         # 0.1% of holding value per tick
+    liquidity_decay_inactive_ticks: int = 200         # ticks without trade → illiquid
+    liquidity_decay_rate: float = 0.0005              # 0.05% of holding value per tick
+    max_player_ownership_pct: float = 0.50            # max 50% of any gate's shares
     
     # ── Celery ──
     celery_broker_url: str = "redis://redis:6379/0"

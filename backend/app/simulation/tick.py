@@ -34,20 +34,11 @@ from app.services.order_matching import (
     update_market_prices,
 )
 from app.services.realtime import publish_tick_update
+from app.services.anti_exploit import run_anti_exploit_maintenance
 from app.simulation.rng import TickRNG, derive_seed
 from app.simulation.state_hash import compute_state_hash
 
 logger = structlog.get_logger()
-
-
-# ── No-op hooks — filled in by future phases ──
-
-
-async def _anti_exploit_maintenance(
-    session: AsyncSession, tick_number: int, rng: TickRNG
-) -> None:
-    """Phase 9+: Anti-exploit maintenance costs."""
-
 
 # ── Intent processing ──
 
@@ -252,7 +243,7 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
         )
 
         # 14. Anti-exploit maintenance (Phase 9+)
-        await _anti_exploit_maintenance(session, tick_number, rng)
+        await run_anti_exploit_maintenance(session, tick_number, tick.id, treasury_id)
 
         # 15. Mark remaining PROCESSING intents as EXECUTED
         #     (REJECTED intents keep their status from step 6)

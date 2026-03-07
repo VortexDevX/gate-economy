@@ -1,7 +1,7 @@
 # DGE — Build Context
 
 > **Usage**: Paste this into every new AI chat after the system prompt.
-> Then paste the current phase's subplan (e.g., `docs/plan/PHASE_9_PLAN.md`).
+> Then paste the current phase's subplan (e.g., `docs/plan/PHASE_10_PLAN.md`).
 > That's it — two documents total.
 
 ---
@@ -18,13 +18,13 @@
 | 6   | Guilds                      | ✅ Done | 19    | 109              |
 | 7   | AI Traders                  | ✅ Done | 20    | 129              |
 | 8   | Events, News & Real-time    | ✅ Done | 19    | 148              |
-| 9   | Anti-Exploit & Balance      | 🔲 NEXT | —     | —                |
-| 10  | Leaderboards & Seasons      | 🔲      | —     | —                |
+| 9   | Anti-Exploit & Balance      | ✅ Done | 17    | 165              |
+| 10  | Leaderboards & Seasons      | 🔲 NEXT | —     | —                |
 | 11  | Admin & Observability       | 🔲      | —     | —                |
 | 12  | Frontend                    | 🔲      | —     | —                |
 | 13  | Hardening & Launch Prep     | 🔲      | —     | —                |
 
-**Baseline: 148 tests passing**
+**Baseline: 165 tests passing**
 
 ---
 
@@ -42,6 +42,7 @@ treasury_balance + SUM(player_balances) + SUM(guild_treasuries) = INITIAL_SEED
 | Faucet  | Treasury → Guild  | Yield to guild gate holdings, yield boom to guild holdings    |
 | Faucet  | Guild → Players   | Dividends (manual + auto)                                     |
 | Sink    | Player → Treasury | Trade fees, gate discovery cost, ISO proceeds, guild creation |
+| Sink    | Player → Treasury | Portfolio maintenance, concentration penalty, liquidity decay |
 | Sink    | Guild → Treasury  | Guild maintenance                                             |
 | Lock    | Player → Treasury | Buy order escrow, AI buy escrow                               |
 | Lock    | Guild → Treasury  | Guild invest escrow                                           |
@@ -49,8 +50,6 @@ treasury_balance + SUM(player_balances) + SUM(guild_treasuries) = INITIAL_SEED
 | Unlock  | Treasury → Guild  | Guild escrow release                                          |
 | Neutral | Player ↔ Player   | Share trades (minus fees to treasury)                         |
 | Neutral | Treasury → Guild  | Guild ISO proceeds                                            |
-
-**Future sinks** (not yet active): portfolio maintenance, concentration penalties, liquidity decay.
 
 ---
 
@@ -64,7 +63,7 @@ treasury_balance + SUM(player_balances) + SUM(guild_treasuries) = INITIAL_SEED
 
 `id` UUID PK · `account_type` ENUM('TREASURY') UQ · `balance_micro` BIGINT ≥0 · `created_at` TZ
 
-### ledger_entries _(append-only — no UPDATE/DELETE)_
+### ledger*entries *(append-only — no UPDATE/DELETE)\_
 
 `id` BIGSERIAL PK · `tick_id` INT NULL FK→ticks · `debit_type`/`credit_type` ENUM('PLAYER','SYSTEM','GUILD') · `debit_id`/`credit_id` UUID · `amount_micro` BIGINT >0 · `entry_type` EntryType · `memo` TEXT · `created_at` TZ
 
@@ -188,7 +187,7 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 12. Update market prices ✅ P5
 13. Roll events ✅ P8
 13b. Generate news ✅ P8
-14. Anti-exploit maintenance 🔲 P9
+14. Anti-exploit maintenance ✅ P9
 15. Mark PROCESSING intents → EXECUTED ✅ P3
 16. Compute state_hash ✅ P3 (extended P4, P5, P6)
 17. Finalize tick record ✅ P3
@@ -226,48 +225,54 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 
 ## Config Values
 
-| Parameter                          | Value                                                 | Phase | Notes                   |
-| ---------------------------------- | ----------------------------------------------------- | ----- | ----------------------- |
-| DB URL                             | `...asyncpg://dge:dge_dev@postgres:5432/dungeon_gate` | 1     | Docker internal         |
-| Redis URL                          | `redis://redis:6379/0`                                | 1     |                         |
-| INITIAL_SEED                       | 100,000,000,000 micro                                 | 2     | 100,000 currency        |
-| STARTING_BALANCE                   | 10,000,000 micro                                      | 2     | 10 currency             |
-| JWT access expiry                  | 15 min                                                | 2     |                         |
-| JWT refresh expiry                 | 7 days                                                | 2     |                         |
-| simulation_initial_seed            | 42                                                    | 3     | RNG chain start         |
-| simulation_tick_interval           | 5s                                                    | 3     |                         |
-| system_spawn_probability           | 0.15                                                  | 4     | ~3 gates/min            |
-| gate_offering_ticks                | 60                                                    | 4     | OFFERING duration       |
-| gate_base_decay_rate               | 0.1                                                   | 4     | Stability decay/tick    |
-| base_fee_rate                      | 0.005 (0.5%)                                          | 5     | Minimum trade fee rate  |
-| progressive_fee_rate               | 0.5                                                   | 5     | Fee scaling factor      |
-| fee_scale_micro                    | 10,000,000                                            | 5     | Progressive denominator |
-| max_fee_rate                       | 0.10 (10%)                                            | 5     | Hard cap on fee rate    |
-| iso_payback_ticks                  | 100                                                   | 5     | ISO price derivation    |
-| guild_creation_cost_micro          | 50,000,000                                            | 6     | 50 currency             |
-| guild_total_shares                 | 1,000                                                 | 6     | Shares per guild        |
-| guild_max_float_pct                | 0.49                                                  | 6     | Max public float        |
-| guild_base_maintenance_micro       | 100,000                                               | 6     | 0.1 currency/tick       |
-| guild_maintenance_scale            | 0.001                                                 | 6     | Scale on gate value     |
-| guild_insolvency_threshold         | 3                                                     | 6     | Missed → INSOLVENT      |
-| guild_dissolution_threshold        | 10                                                    | 6     | Insolvent → DISSOLVED   |
-| guild_liquidation_discount         | 0.50                                                  | 6     | Liquidation at 50%      |
-| ai_market_maker_budget_micro       | 2,000,000,000                                         | 7     | 2,000 currency          |
-| ai_value_investor_budget_micro     | 1,000,000,000                                         | 7     | 1,000 currency          |
-| ai_noise_trader_budget_micro       | 500,000,000                                           | 7     | 500 currency            |
-| ai_mm_spread                       | 0.05                                                  | 7     | 5% bid/ask spread       |
-| ai_mm_order_qty                    | 5                                                     | 7     | Shares per MM order     |
-| ai_vi_buy_discount                 | 0.30                                                  | 7     | Buy below fair × 0.7    |
-| ai_vi_sell_premium                 | 0.30                                                  | 7     | Sell above fair × 1.3   |
-| ai_noise_activity                  | 0.40                                                  | 7     | NT action probability   |
-| ai_noise_max_qty                   | 3                                                     | 7     | Max shares per NT trade |
-| event_probability                  | 0.10                                                  | 8     | Event chance per tick   |
-| event_stability_surge_min/max      | 5.0 / 15.0                                            | 8     | Surge stability range   |
-| event_stability_crisis_min/max     | 5.0 / 15.0                                            | 8     | Crisis stability range  |
-| event_market_shock_min/max         | 2.0 / 5.0                                             | 8     | Shock stability range   |
-| event_yield_boom_min/max_mult      | 2.0 / 4.0                                             | 8     | Boom yield multiplier   |
-| event_discovery_surge_min/max      | 1 / 3                                                 | 8     | Extra gates spawned     |
-| news_large_trade_threshold_micro   | 1,000,000                                             | 8     | Trade news cutoff       |
+| Parameter                        | Value                                                 | Phase | Notes                    |
+| -------------------------------- | ----------------------------------------------------- | ----- | ------------------------ |
+| DB URL                           | `...asyncpg://dge:dge_dev@postgres:5432/dungeon_gate` | 1     | Docker internal          |
+| Redis URL                        | `redis://redis:6379/0`                                | 1     |                          |
+| INITIAL_SEED                     | 100,000,000,000 micro                                 | 2     | 100,000 currency         |
+| STARTING_BALANCE                 | 10,000,000 micro                                      | 2     | 10 currency              |
+| JWT access expiry                | 15 min                                                | 2     |                          |
+| JWT refresh expiry               | 7 days                                                | 2     |                          |
+| simulation_initial_seed          | 42                                                    | 3     | RNG chain start          |
+| simulation_tick_interval         | 5s                                                    | 3     |                          |
+| system_spawn_probability         | 0.15                                                  | 4     | ~3 gates/min             |
+| gate_offering_ticks              | 60                                                    | 4     | OFFERING duration        |
+| gate_base_decay_rate             | 0.1                                                   | 4     | Stability decay/tick     |
+| base_fee_rate                    | 0.005 (0.5%)                                          | 5     | Minimum trade fee rate   |
+| progressive_fee_rate             | 0.5                                                   | 5     | Fee scaling factor       |
+| fee_scale_micro                  | 10,000,000                                            | 5     | Progressive denominator  |
+| max_fee_rate                     | 0.10 (10%)                                            | 5     | Hard cap on fee rate     |
+| iso_payback_ticks                | 100                                                   | 5     | ISO price derivation     |
+| guild_creation_cost_micro        | 50,000,000                                            | 6     | 50 currency              |
+| guild_total_shares               | 1,000                                                 | 6     | Shares per guild         |
+| guild_max_float_pct              | 0.49                                                  | 6     | Max public float         |
+| guild_base_maintenance_micro     | 100,000                                               | 6     | 0.1 currency/tick        |
+| guild_maintenance_scale          | 0.001                                                 | 6     | Scale on gate value      |
+| guild_insolvency_threshold       | 3                                                     | 6     | Missed → INSOLVENT       |
+| guild_dissolution_threshold      | 10                                                    | 6     | Insolvent → DISSOLVED    |
+| guild_liquidation_discount       | 0.50                                                  | 6     | Liquidation at 50%       |
+| ai_market_maker_budget_micro     | 2,000,000,000                                         | 7     | 2,000 currency           |
+| ai_value_investor_budget_micro   | 1,000,000,000                                         | 7     | 1,000 currency           |
+| ai_noise_trader_budget_micro     | 500,000,000                                           | 7     | 500 currency             |
+| ai_mm_spread                     | 0.05                                                  | 7     | 5% bid/ask spread        |
+| ai_mm_order_qty                  | 5                                                     | 7     | Shares per MM order      |
+| ai_vi_buy_discount               | 0.30                                                  | 7     | Buy below fair × 0.7     |
+| ai_vi_sell_premium               | 0.30                                                  | 7     | Sell above fair × 1.3    |
+| ai_noise_activity                | 0.40                                                  | 7     | NT action probability    |
+| ai_noise_max_qty                 | 3                                                     | 7     | Max shares per NT trade  |
+| event_probability                | 0.10                                                  | 8     | Event chance per tick    |
+| event_stability_surge_min/max    | 5.0 / 15.0                                            | 8     | Surge stability range    |
+| event_stability_crisis_min/max   | 5.0 / 15.0                                            | 8     | Crisis stability range   |
+| event_market_shock_min/max       | 2.0 / 5.0                                             | 8     | Shock stability range    |
+| event_yield_boom_min/max_mult    | 2.0 / 4.0                                             | 8     | Boom yield multiplier    |
+| event_discovery_surge_min/max    | 1 / 3                                                 | 8     | Extra gates spawned      |
+| news_large_trade_threshold_micro | 1,000,000                                             | 8     | Trade news cutoff        |
+| portfolio_maintenance_rate       | 0.0001                                                | 9     | 0.01% holding value/tick |
+| concentration_threshold_pct      | 0.30                                                  | 9     | Penalty above 30%        |
+| concentration_penalty_rate       | 0.001                                                 | 9     | 0.1% holding value/tick  |
+| liquidity_decay_inactive_ticks   | 200                                                   | 9     | Ticks without trade      |
+| liquidity_decay_rate             | 0.0005                                                | 9     | 0.05% holding value/tick |
+| max_player_ownership_pct         | 0.50                                                  | 9     | Max 50% of gate shares   |
 
 <!-- PHASE_CONFIG: Add new config params here after each phase -->
 
@@ -285,15 +290,15 @@ dungeon-gate-economy/
 │   │   ├── core/                      # auth (JWT/Argon2), deps (get_db, get_redis, get_current_player)
 │   │   ├── models/                    # base, event, gate, guild, intent, ledger, market, news, player, tick, treasury
 │   │   ├── schemas/                   # auth, gate, guild, intent, market, news, player, simulation
-│   │   ├── services/                  # ai_traders, auth, event_engine, fee_calculator, gate_lifecycle, guild_manager, news_generator, order_matching, realtime, transfer
+│   │   ├── services/                  # ai_traders, anti_exploit, auth, event_engine, fee_calculator, gate_lifecycle, guild_manager, news_generator, order_matching, realtime, transfer
 │   │   ├── simulation/               # lock, rng, state_hash, tick, worker
 │   │   ├── config.py, database.py, main.py
-│   ├── tests/                         # 20 test files, 148 tests
+│   ├── tests/                         # 21 test files, 165 tests
 │   ├── Dockerfile, alembic.ini, pyproject.toml, requirements.txt
 ├── docs/
 │   ├── plan/                          # PLAN.md + PHASE_X_PLAN.md files
 │   ├── postman/                       # Postman collection
-│   ├── summary/                       # SUMMARY_1-8.md
+│   ├── summary/                       # SUMMARY_1-9.md
 │   ├── CONTEXT.md                     # ← THIS FILE
 │   ├── architecture.md, runbook.md
 ├── frontend/src/                      # .gitkeep only
@@ -310,6 +315,7 @@ dungeon-gate-economy/
 ### 1. Test Infrastructure
 
 - **Autouse fixture `_clean_state`** wipes ALL data and resets treasury to INITIAL_SEED before every test. Never assume leftover state.
+- **Autouse fixture `_disable_anti_exploit`** sets anti-exploit rates to 0.0 globally. Tests that need anti-exploit re-enable via local fixture.
 - **NullPool engines** per test fixture — avoids asyncio event loop binding issues.
 - **`pause_simulation`** fixture holds Redis lock to prevent Celery worker from running ticks during tests.
 - **`funded_player_id`** fixture creates a player with `starting_balance_micro` properly debited from treasury — use for tests needing a player with funds.
@@ -414,19 +420,30 @@ Before writing any code for a new phase, ask the user for the current versions o
 - Realtime publish is fire-and-forget after commit — tick integrity never compromised.
 - WebSocket `/ws` is unauthenticated public read-only feed via Redis pub/sub bridge.
 
+### 15. Anti-Exploit Patterns
+
+- Anti-exploit runs in step 14 (after events, before intent finalization).
+- Three sequential mechanisms: portfolio maintenance → concentration penalty → liquidity decay.
+- Each mechanism sees balance after prior charges — no double-spending.
+- `_charge_or_drain` helper: if player can't cover full cost, charges whatever is available (floor at 0).
+- Float cap checked at intent time (PLACE_ORDER), not at match time.
+- OFFERING gates exempt from float cap — allows ISO distribution.
+- GUILD_SHARE orders exempt from float cap.
+- AI players subject to portfolio/concentration/decay same as humans.
+- Global autouse fixture disables anti-exploit rates in tests; `_enable_anti_exploit` fixture re-enables for anti-exploit-specific tests.
+
 <!-- CONVENTIONS: Add new patterns discovered during implementation -->
 
 ---
 
 ## Upcoming Phases (Brief)
 
-| Phase  | One-line Summary                                                            |
-| ------ | --------------------------------------------------------------------------- |
-| **9**  | Concentration penalties, liquidity decay, portfolio maintenance, float caps |
-| **10** | Net worth leaderboards with decay, seasonal resets                          |
-| **11** | Admin API, tunable parameters, Prometheus/Grafana, k6 load tests            |
-| **12** | React frontend (all player-facing features)                                 |
-| **13** | Replay tests, conservation soak, fuzz, security audit, load test, docs      |
+| Phase  | One-line Summary                                                       |
+| ------ | ---------------------------------------------------------------------- |
+| **10** | Net worth leaderboards with decay, seasonal resets                     |
+| **11** | Admin API, tunable parameters, Prometheus/Grafana, k6 load tests       |
+| **12** | React frontend (all player-facing features)                            |
+| **13** | Replay tests, conservation soak, fuzz, security audit, load test, docs |
 
 ---
 
@@ -442,3 +459,5 @@ After completing each phase:
 6. 📁 **Folder Structure** — update if significant new dirs/files
 7. 📝 **Conventions** — add any new patterns discovered
 8. 🗑️ **Upcoming Phases** — remove completed phase from the table
+
+---

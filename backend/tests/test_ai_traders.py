@@ -400,7 +400,7 @@ async def test_mm_places_sell_when_holding(session_factory: async_sessionmaker):
 
 
 @pytest.mark.asyncio
-async def test_mm_cancels_old_orders(session_factory: async_sessionmaker):
+async def test_mm_cancels_old_orders(session_factory: async_sessionmaker, pause_simulation):
     """MM cancels previous orders and releases escrow on new tick."""
     async with session_factory() as session:
         await _seed_rank_profiles(session)

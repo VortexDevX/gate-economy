@@ -2,6 +2,7 @@ import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis as RedisClient
@@ -87,6 +88,22 @@ async def _clean_state():
     await engine.dispose()
     yield
 
+@pytest.fixture(autouse=True)
+def _disable_anti_exploit():
+    """Disable anti-exploit rates globally so worker ticks don't cause lock contention.
+
+    Anti-exploit tests re-enable rates via local autouse fixture.
+    """
+    orig_pm = settings.portfolio_maintenance_rate
+    orig_cp = settings.concentration_penalty_rate
+    orig_ld = settings.liquidity_decay_rate
+    settings.portfolio_maintenance_rate = 0.0
+    settings.concentration_penalty_rate = 0.0
+    settings.liquidity_decay_rate = 0.0
+    yield
+    settings.portfolio_maintenance_rate = orig_pm
+    settings.concentration_penalty_rate = orig_cp
+    settings.liquidity_decay_rate = orig_ld
 
 # ── Core fixtures ──
 

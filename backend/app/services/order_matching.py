@@ -307,6 +307,30 @@ async def process_place_order(
         intent.status = IntentStatus.REJECTED
         intent.reject_reason = f"Quantity {quantity} exceeds total shares {total}"
         return
+    
+    # Float cap: prevent excessive ownership concentration (OFFERING gates exempt)
+    if side == OrderSide.BUY and asset_type == AssetType.GATE_SHARE:
+        status_result = await session.execute(
+            select(Gate.status).where(Gate.id == asset_id)
+        )
+        gate_status = status_result.scalar_one()
+        if gate_status != GateStatus.OFFERING:
+            result = await session.execute(
+                select(GateShare.quantity).where(and_(
+                    GateShare.gate_id == asset_id,
+                    GateShare.player_id == intent.player_id,
+                ))
+            )
+            current_qty = result.scalar_one_or_none() or 0
+            max_allowed = int(total * settings.max_player_ownership_pct) # type: ignore
+            if current_qty + quantity > max_allowed:
+                intent.status = IntentStatus.REJECTED
+                intent.reject_reason = (
+                    f"Would exceed ownership cap: "
+                    f"{current_qty}+{quantity} > {max_allowed} "
+                    f"({settings.max_player_ownership_pct:.0%} of {total})"
+                )
+                return
 
     if side == OrderSide.BUY:
         escrow_total, _ = calculate_escrow(quantity, price_limit)
@@ -411,7 +435,7 @@ async def _execute_trade(
         await transfer(
             session=session,
             from_type=AccountEntityType.SYSTEM, from_id=treasury_id,
-            to_type=AccountEntityType.GUILD, to_id=sell_order.guild_id,
+            to_type=AccountEntityType.GUILD, to_id=sell_order.guild_id, # type: ignore
             amount=trade_value, entry_type=EntryType.TRADE_SETTLEMENT,
             tick_id=tick_id,
             memo=f"Guild trade: {trade_qty} shares @ {trade_price}",
@@ -520,7 +544,7 @@ async def _execute_trade(
         await transfer(
             session=session,
             from_type=AccountEntityType.SYSTEM, from_id=treasury_id,
-            to_type=esc_type, to_id=esc_id,
+            to_type=esc_type, to_id=esc_id, # type: ignore
             amount=buy_order.escrow_micro,
             entry_type=EntryType.ESCROW_RELEASE,
             tick_id=tick_id, memo="Excess escrow on fill",
