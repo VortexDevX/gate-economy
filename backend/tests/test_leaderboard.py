@@ -433,6 +433,48 @@ async def test_current_season_404_when_none(client):
     assert resp.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_season_results_api(client, session_factory):
+    async with session_factory() as session:
+        p1 = await _create_funded_player(session, username="sres_p1")
+        p2 = await _create_funded_player(session, username="sres_p2")
+        season = Season(
+            season_number=1,
+            start_tick=1,
+            end_tick=10,
+            status=SeasonStatus.COMPLETED,
+        )
+        session.add(season)
+        await session.flush()
+        session.add_all(
+            [
+                SeasonResult(
+                    season_id=season.id,
+                    player_id=p1.id,
+                    final_rank=1,
+                    final_score_micro=2_000_000,
+                    final_net_worth_micro=2_000_000,
+                ),
+                SeasonResult(
+                    season_id=season.id,
+                    player_id=p2.id,
+                    final_rank=2,
+                    final_score_micro=1_000_000,
+                    final_net_worth_micro=1_000_000,
+                ),
+            ]
+        )
+        await session.commit()
+        season_id = season.id
+
+    resp = await client.get(f"/seasons/{season_id}/results")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    assert data[0]["final_rank"] == 1
+    assert data[1]["final_rank"] == 2
+
+
 # ── Integration ──
 
 

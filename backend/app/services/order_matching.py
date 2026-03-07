@@ -308,30 +308,6 @@ async def process_place_order(
         intent.reject_reason = f"Quantity {quantity} exceeds total shares {total}"
         return
     
-    # Float cap: prevent excessive ownership concentration (OFFERING gates exempt)
-    if side == OrderSide.BUY and asset_type == AssetType.GATE_SHARE:
-        status_result = await session.execute(
-            select(Gate.status).where(Gate.id == asset_id)
-        )
-        gate_status = status_result.scalar_one()
-        if gate_status != GateStatus.OFFERING:
-            result = await session.execute(
-                select(GateShare.quantity).where(and_(
-                    GateShare.gate_id == asset_id,
-                    GateShare.player_id == intent.player_id,
-                ))
-            )
-            current_qty = result.scalar_one_or_none() or 0
-            max_allowed = int(total * settings.max_player_ownership_pct) # type: ignore
-            if current_qty + quantity > max_allowed:
-                intent.status = IntentStatus.REJECTED
-                intent.reject_reason = (
-                    f"Would exceed ownership cap: "
-                    f"{current_qty}+{quantity} > {max_allowed} "
-                    f"({settings.max_player_ownership_pct:.0%} of {total})"
-                )
-                return
-
     if side == OrderSide.BUY:
         escrow_total, _ = calculate_escrow(quantity, price_limit)
         result = await session.execute(
@@ -369,6 +345,70 @@ async def process_place_order(
             quantity=quantity, price_limit_micro=price_limit,
             created_at_tick=tick_number,
         ))
+
+
+async def _cap_trade_qty_by_float_limit(
+    session: AsyncSession,
+    buy_order: Order,
+    proposed_qty: int,
+    tick_number: int,
+    tick_id: int,
+    treasury_id: uuid.UUID,
+) -> int:
+    """Enforce single-player float cap at matching time for gate-share BUYs.
+
+    Returns allowed trade quantity (possibly 0). If no quantity is allowed,
+    the buy order is cancelled and escrow is released.
+    """
+    if (
+        buy_order.asset_type != AssetType.GATE_SHARE
+        or buy_order.guild_id is not None
+        or buy_order.is_system
+    ):
+        return proposed_qty
+
+    result = await session.execute(
+        select(Gate).where(Gate.id == buy_order.asset_id)
+    )
+    gate = result.scalar_one_or_none()
+    if gate is None or gate.status == GateStatus.OFFERING:
+        return proposed_qty
+
+    result = await session.execute(
+        select(GateShare.quantity).where(
+            and_(
+                GateShare.gate_id == buy_order.asset_id,
+                GateShare.player_id == buy_order.player_id,
+            )
+        )
+    )
+    current_qty = result.scalar_one_or_none() or 0
+    max_allowed = int(gate.total_shares * settings.max_player_ownership_pct)
+    remaining_cap = max(0, max_allowed - current_qty)
+
+    if remaining_cap > 0:
+        return min(proposed_qty, remaining_cap)
+
+    if buy_order.escrow_micro > 0:
+        await transfer(
+            session=session,
+            from_type=AccountEntityType.SYSTEM,
+            from_id=treasury_id,
+            to_type=AccountEntityType.PLAYER,
+            to_id=buy_order.player_id,
+            amount=buy_order.escrow_micro,
+            entry_type=EntryType.ESCROW_RELEASE,
+            tick_id=tick_id,
+            memo=(
+                f"Ownership cap cancel: "
+                f"{settings.max_player_ownership_pct:.0%} of {gate.total_shares}"
+            ),
+        )
+        buy_order.escrow_micro = 0
+
+    buy_order.status = OrderStatus.CANCELLED
+    buy_order.updated_at_tick = tick_number
+    return 0
 
 
 async def process_cancel_order(
@@ -617,6 +657,17 @@ async def match_orders(
             if bb.price_limit_micro < bs.price_limit_micro:
                 break
             trade_qty = min(bb.remaining, bs.remaining)
+            trade_qty = await _cap_trade_qty_by_float_limit(
+                session=session,
+                buy_order=bb,
+                proposed_qty=trade_qty,
+                tick_number=tick_number,
+                tick_id=tick_id,
+                treasury_id=treasury_id,
+            )
+            if trade_qty == 0:
+                bi += 1
+                continue
             await _execute_trade(
                 session, bb, bs, trade_qty, bs.price_limit_micro,
                 tick_number, tick_id, treasury_id,

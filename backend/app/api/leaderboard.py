@@ -15,6 +15,7 @@ from app.schemas.leaderboard import (
     LeaderboardEntry,
     LeaderboardResponse,
     MyRankResponse,
+    SeasonResultResponse,
     SeasonResponse,
 )
 
@@ -165,3 +166,41 @@ async def get_current_season(
         end_tick=season.end_tick,
         status=season.status.value,
     )
+
+
+@router.get("/seasons/{season_id}/results", response_model=list[SeasonResultResponse])
+async def get_season_results(
+    season_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get final standings for a completed season."""
+    season_result = await db.execute(
+        select(Season).where(Season.id == season_id)
+    )
+    season = season_result.scalar_one_or_none()
+    if season is None:
+        raise HTTPException(status_code=404, detail="Season not found")
+
+    offset = (page - 1) * page_size
+    result = await db.execute(
+        select(SeasonResult, Player.username)
+        .join(Player, SeasonResult.player_id == Player.id)
+        .where(SeasonResult.season_id == season_id)
+        .order_by(SeasonResult.final_rank.asc())
+        .offset(offset)
+        .limit(page_size)
+    )
+    rows = result.all()
+    return [
+        SeasonResultResponse(
+            season_id=sr.season_id,
+            player_id=sr.player_id,
+            username=username,
+            final_rank=sr.final_rank,
+            final_score_micro=sr.final_score_micro,
+            final_net_worth_micro=sr.final_net_worth_micro,
+        )
+        for sr, username in rows
+    ]

@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from app.api.auth import router as auth_router
+from app.api.events import router as events_router
 from app.api.gates import router as gates_router
 from app.api.guilds import router as guilds_router
 from app.api.health import router as health_router
@@ -289,6 +290,7 @@ def create_app() -> FastAPI:
     app.include_router(market_router)
     app.include_router(orders_router)
     app.include_router(news_router)
+    app.include_router(events_router)
     app.include_router(leaderboard_router)
     app.include_router(ws_router)
 

@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     concentration_penalty_rate: float = 0.001         # 0.1% of holding value per tick
     liquidity_decay_inactive_ticks: int = 200         # ticks without trade → illiquid
     liquidity_decay_rate: float = 0.0005              # 0.05% of holding value per tick
-    max_player_ownership_pct: float = 0.50            # max 50% of any gate's shares
+    max_player_ownership_pct: float = 0.80            # max 80% of any gate's shares
 
     # ── Leaderboard & Seasons ──
     net_worth_update_interval: int = 12                   # update every N ticks (~1 min)

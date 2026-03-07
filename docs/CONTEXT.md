@@ -24,7 +24,7 @@
 | 12  | Frontend                    | 🔲      | —     | —                |
 | 13  | Hardening & Launch Prep     | 🔲      | —     | —                |
 
-**Baseline: 185 tests passing**
+**Baseline: 189 tests passing**
 
 ---
 
@@ -234,11 +234,14 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 | GET    | /guilds                                | No   | 6     | List guilds (filter/page)  |
 | GET    | /guilds/{id}                           | No   | 6     | Guild detail + members     |
 | GET    | /news                                  | No   | 8     | Paginated news feed        |
+| GET    | /events                                | No   | 8     | Paginated events feed      |
 | WS     | /ws                                    | No   | 8     | Real-time tick updates     |
+| WS     | /ws/feed                               | Yes  | 8     | Authenticated realtime feed |
 | GET    | /leaderboard                           | No   | 10    | Paginated rankings         |
 | GET    | /leaderboard/me                        | Yes  | 10    | Player's rank + breakdown  |
 | GET    | /seasons                               | No   | 10    | List seasons (paginated)   |
 | GET    | /seasons/current                       | No   | 10    | Current active season      |
+| GET    | /seasons/{id}/results                  | No   | 10    | Completed season standings |
 
 ---
 
@@ -291,7 +294,7 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 | concentration_penalty_rate       | 0.001                                                 | 9     | 0.1% holding value/tick  |
 | liquidity_decay_inactive_ticks   | 200                                                   | 9     | Ticks without trade      |
 | liquidity_decay_rate             | 0.0005                                                | 9     | 0.05% holding value/tick |
-| max_player_ownership_pct         | 0.50                                                  | 9     | Max 50% of gate shares   |
+| max_player_ownership_pct         | 0.80                                                  | 9     | Max 80% of gate shares   |
 | net_worth_update_interval        | 12                                                    | 10    | Update every N ticks     |
 | leaderboard_size                 | 100                                                   | 10    | Max API entries          |
 | leaderboard_decay_rate           | 0.0001                                                | 10    | 0.01% per inactive tick  |
@@ -311,14 +314,14 @@ dungeon-gate-economy/
 ├── backend/
 │   ├── alembic/versions/              # 7 migrations
 │   ├── app/
-│   │   ├── api/                       # auth, gates, guilds, health, intents, leaderboard, market, news, orders, players, simulation, ws
+│   │   ├── api/                       # auth, events, gates, guilds, health, intents, leaderboard, market, news, orders, players, simulation, ws
 │   │   ├── core/                      # auth (JWT/Argon2), deps (get_db, get_redis, get_current_player)
 │   │   ├── models/                    # base, event, gate, guild, intent, leaderboard, ledger, market, news, player, tick, treasury
-│   │   ├── schemas/                   # auth, gate, guild, intent, leaderboard, market, news, player, simulation
+│   │   ├── schemas/                   # auth, event, gate, guild, intent, leaderboard, market, news, player, simulation
 │   │   ├── services/                  # ai_traders, anti_exploit, auth, event_engine, fee_calculator, gate_lifecycle, guild_manager, leaderboard, news_generator, order_matching, realtime, transfer
 │   │   ├── simulation/               # lock, rng, state_hash, tick, worker
 │   │   ├── config.py, database.py, main.py
-│   ├── tests/                         # 22 test files, 185 tests
+│   ├── tests/                         # 23 test files, 189 tests
 │   ├── Dockerfile, alembic.ini, pyproject.toml, requirements.txt
 ├── docs/
 │   ├── plan/                          # PLAN.md + PHASE_X_PLAN.md files
@@ -445,6 +448,7 @@ Before writing any code for a new phase, ask the user for the current versions o
 - News is post-hoc scan — no modifications to existing services.
 - Realtime publish is fire-and-forget after commit — tick integrity never compromised.
 - WebSocket `/ws` is unauthenticated public read-only feed via Redis pub/sub bridge.
+- WebSocket `/ws/feed` is authenticated via access JWT query param (`?token=...`).
 
 ### 15. Anti-Exploit Patterns
 
@@ -452,7 +456,7 @@ Before writing any code for a new phase, ask the user for the current versions o
 - Three sequential mechanisms: portfolio maintenance → concentration penalty → liquidity decay.
 - Each mechanism sees balance after prior charges — no double-spending.
 - `_charge_or_drain` helper: if player can't cover full cost, charges whatever is available (floor at 0).
-- Float cap checked at intent time (PLACE_ORDER), not at match time.
+- Float cap checked at matching time for GATE_SHARE BUY orders.
 - OFFERING gates exempt from float cap — allows ISO distribution.
 - GUILD_SHARE orders exempt from float cap.
 - AI players subject to portfolio/concentration/decay same as humans.

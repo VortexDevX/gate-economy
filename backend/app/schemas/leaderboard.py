@@ -41,3 +41,12 @@ class SeasonResponse(BaseModel):
 
 class SeasonDetailResponse(SeasonResponse):
     top_players: list[LeaderboardEntry]
+
+
+class SeasonResultResponse(BaseModel):
+    season_id: int
+    player_id: UUID
+    username: str
+    final_rank: int
+    final_score_micro: int
+    final_net_worth_micro: int
