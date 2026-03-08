@@ -10,14 +10,16 @@ from app.models.base import Base
 
 
 class NewsCategory(str, enum.Enum):
+    EVENT = "EVENT"
     GATE = "GATE"
     MARKET = "MARKET"
     GUILD = "GUILD"
+    LEADERBOARD = "LEADERBOARD"
     WORLD = "WORLD"
 
 
 class News(Base):
-    __tablename__ = "news"
+    __tablename__ = "news_items"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

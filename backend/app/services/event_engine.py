@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.event import Event, EventType
+from app.models.event import Event, EventSeverity, EventTargetType, EventType
 from app.models.gate import Gate, GateRankProfile, GateShare, GateStatus
 from app.models.guild import Guild, GuildGateHolding, GuildStatus
 from app.models.ledger import AccountEntityType, EntryType
@@ -99,8 +99,14 @@ async def _handle_stability_surge(
 
     return Event(
         event_type=EventType.STABILITY_SURGE,
+        severity=EventSeverity.MINOR,
+        target_type=EventTargetType.GATE,
         tick_id=tick_id,
         target_id=gate.id,
+        effects={
+            "stability_change": round(change, 2),
+            "new_stability": round(gate.stability, 2),
+        },
         payload={
             "change": round(change, 2),
             "new_stability": round(gate.stability, 2),
@@ -140,8 +146,14 @@ async def _handle_stability_crisis(
 
     return Event(
         event_type=EventType.STABILITY_CRISIS,
+        severity=EventSeverity.MODERATE,
+        target_type=EventTargetType.GATE,
         tick_id=tick_id,
         target_id=gate.id,
+        effects={
+            "stability_change": -round(change, 2),
+            "new_stability": round(gate.stability, 2),
+        },
         payload={
             "change": round(change, 2),
             "new_stability": round(gate.stability, 2),
@@ -262,8 +274,14 @@ async def _handle_yield_boom(
 
     return Event(
         event_type=EventType.YIELD_BOOM,
+        severity=EventSeverity.MAJOR,
+        target_type=EventTargetType.GATE,
         tick_id=tick_id,
         target_id=gate.id,
+        effects={
+            "yield_multiplier": round(multiplier, 2),
+            "bonus_yield_micro": bonus_yield,
+        },
         payload={
             "multiplier": round(multiplier, 2),
             "bonus_yield": bonus_yield,
@@ -304,8 +322,11 @@ async def _handle_market_shock(
 
     return Event(
         event_type=EventType.MARKET_SHOCK,
+        severity=EventSeverity.MAJOR,
+        target_type=EventTargetType.MARKET,
         tick_id=tick_id,
         target_id=None,
+        effects={"stability_change": -round(change, 2), "affected_count": len(gates)},
         payload={"change": round(change, 2), "affected_count": len(gates)},
     )
 
@@ -334,7 +355,10 @@ async def _handle_discovery_surge(
 
     return Event(
         event_type=EventType.DISCOVERY_SURGE,
+        severity=EventSeverity.MODERATE,
+        target_type=EventTargetType.GLOBAL,
         tick_id=tick_id,
         target_id=None,
+        effects={"gates_spawned": spawned},
         payload={"count": spawned},
     )

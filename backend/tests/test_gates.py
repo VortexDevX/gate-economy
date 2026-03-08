@@ -434,6 +434,47 @@ async def test_no_yield_for_collapsed_gate(session_factory):
 
 
 @pytest.mark.asyncio
+async def test_concentrated_holder_gets_reduced_yield(session_factory):
+    """Ownership >50% receives reduced effective yield (80% band)."""
+    async with session_factory() as session:
+        treasury_id = await _get_treasury_id(session)
+        player = await _create_funded_player(session, balance=0)
+
+        gate = Gate(
+            rank=GateRank.E,
+            stability=100.0,
+            volatility=0.05,
+            base_yield_micro=10_000,
+            total_shares=100,
+            status=GateStatus.ACTIVE,
+            spawned_at_tick=1,
+            discovery_type=DiscoveryType.SYSTEM,
+        )
+        session.add(gate)
+        await session.flush()
+
+        session.add(GateShare(gate_id=gate.id, player_id=player.id, quantity=60))
+        session.add(GateShare(gate_id=gate.id, player_id=treasury_id, quantity=40))
+        await session.commit()
+        player_id = player.id
+
+    async with session_factory() as session:
+        treasury_before = (await _get_treasury(session)).balance_micro
+        await distribute_yield(
+            session, tick_id=1, treasury_id=await _get_treasury_id(session)
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(Player.balance_micro).where(Player.id == player_id)
+        )
+        assert result.scalar_one() == 4_800
+        treasury_after = (await _get_treasury(session)).balance_micro
+        assert treasury_before - treasury_after == 4_800
+
+
+@pytest.mark.asyncio
 async def test_no_yield_when_treasury_empty(session_factory):
     """Yield distribution gracefully handles empty treasury."""
     async with session_factory() as session:

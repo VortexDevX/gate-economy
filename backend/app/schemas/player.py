@@ -9,6 +9,7 @@ class PlayerResponse(BaseModel):
     username: str
     balance_micro: int
     is_ai: bool
+    role: str
     created_at: datetime
 
     model_config = {"from_attributes": True}

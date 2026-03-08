@@ -13,11 +13,19 @@ from app.database import get_session_factory
 from app.models.player import Player
 
 router = APIRouter(tags=["websocket"])
+_active_ws_connections = 0
+
+
+def get_active_ws_connections() -> int:
+    """Expose current websocket connection count for metrics."""
+    return _active_ws_connections
 
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
+    global _active_ws_connections
     await websocket.accept()
+    _active_ws_connections += 1
     r = Redis.from_url(settings.redis_url, decode_responses=True)
     pubsub = r.pubsub()
     await pubsub.subscribe("dge:realtime")
@@ -28,6 +36,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
+        _active_ws_connections = max(0, _active_ws_connections - 1)
         await pubsub.unsubscribe("dge:realtime")
         await pubsub.aclose()
         await r.aclose()

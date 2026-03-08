@@ -2,86 +2,83 @@
 
 ## System Overview
 
-Simulation-first, market-driven game with a closed-loop economy.
-Single authoritative simulation worker advances the world in discrete 5-second ticks.
+Dungeon Gate Economy is a simulation-first, closed-loop market game.
+All world state mutations are executed by one authoritative simulation worker in deterministic ticks.
 
 ## Core Invariant
 
 ```
-
 treasury_balance + SUM(player_balances) + SUM(guild_treasuries) = INITIAL_SEED
-
 ```
 
-Verified every tick. Violation halts simulation.
+The invariant is:
+- checked by tests and admin audit endpoint
+- enforced at runtime each tick
+- if violated, tick commit is aborted and worker sets simulation pause flag
 
-## Tech Stack
+## Core Stack
 
-| Layer      | Technology                         |
-| ---------- | ---------------------------------- |
-| API        | FastAPI (async)                    |
-| Database   | PostgreSQL 15 + SQLAlchemy 2 async |
-| Cache/Pub  | Redis 7                            |
-| Simulation | Celery + Redis broker              |
-| Frontend   | React + TypeScript + Vite          |
-| Infra      | Docker Compose                     |
+| Layer | Technology |
+| --- | --- |
+| API | FastAPI (async) |
+| DB | PostgreSQL 15 + SQLAlchemy 2 async + Alembic |
+| Cache / Coordination | Redis 7 |
+| Simulation | Celery worker + beat |
+| Metrics | Prometheus + Grafana |
+| Load Harness | k6 scripts in `infra/k6` |
 
-## Data Flow
+## High-Level Data Flow
 
-```
+1. Player submits action intent via API (`/intents`).
+2. Intent is persisted as `QUEUED`.
+3. Worker wakes every tick interval, checks pause flag, acquires Redis simulation lock.
+4. Worker executes full tick pipeline in one DB transaction.
+5. Tick commits atomically or rolls back fully.
+6. After commit, worker publishes realtime summary to Redis pub/sub.
+7. API websocket layer relays pub/sub messages to connected clients.
 
-Player → API (submit intent) → DB (intents table, QUEUED)
-↓
-Celery Beat (5s) → Worker → acquire Redis lock
-↓
-Tick Pipeline (single DB transaction): 1. Determine tick_number 2. Derive seed (SHA-256 chain) 3. Collect QUEUED intents → PROCESSING 4. [Phase 4+] Process intents by type 5. [Phase 4+] Advance gates 6. [Phase 5+] Match orders 7. [Phase 8+] Roll events 8. [Phase 9+] Anti-exploit maintenance 9. Mark intents EXECUTED/REJECTED 10. Compute state_hash 11. Commit all mutations atomically
-↓
-Release lock → log tick_completed
+## Tick Pipeline (Current)
 
-```
+1. Determine `tick_number`
+2. Derive deterministic seed and create `TickRNG`
+3. Insert tick row
+4. Load treasury + runtime tunables from `simulation_parameters`
+5. Collect QUEUED intents -> PROCESSING
+6. Process intents
+7. Advance gates + yield
+8. Guild lifecycle + AI traders
+9. ISO/order maintenance + matching + market prices
+10. Events + news generation
+11. Anti-exploit maintenance
+12. Leaderboard + season maintenance
+13. Hard invariant check (abort on failure)
+14. Finalize intents + state hash + tick completion
+15. Commit
+16. Publish realtime summary
 
-## Determinism Model
+## Determinism and Replay
 
-- RNG chain: `seed_n = SHA256(seed_{n-1} || tick_number)` truncated to 64-bit
-- Initial seed configurable (`simulation_initial_seed`, default 42)
-- `TickRNG` wraps `random.Random` — no bare `import random` allowed elsewhere
-- Given same initial seed + same intents → identical state hashes (verified by replay tests)
+- Seed chain: `seed_n = SHA256(seed_{n-1} || tick_number)` truncated to 64-bit.
+- All stochastic behavior uses tick-scoped RNG.
+- State hash includes major economy/state dimensions (balances, market/order activity, guild/season state).
+- Replay tests verify deterministic outcomes.
 
-## Leadership Lock
+## Real-time and Observability
 
-- Redis `SETNX` with 4s TTL on key `sim:leader`
-- Lua-script atomic release (compare-and-delete)
-- Worker concurrency = 1 (Celery setting)
-- Lock is backup safety — single worker is the primary guarantee
+- WebSocket endpoints:
+  - `WS /ws` (public)
+  - `WS /ws/feed?token=<access_jwt>` (authenticated)
+- Realtime payload currently publishes `tick_update` + compact news payload.
+- `/metrics` exports business metrics for Prometheus scrape.
+- Grafana dashboard and Prometheus config are provisioned under `infra/`.
 
-## Database Tables
+## Current Backend Scope
 
-| Table             | Phase | Purpose                         |
-| ----------------- | ----- | ------------------------------- |
-| `players`         | 2     | Player accounts with wallet     |
-| `system_accounts` | 2     | Treasury (singleton)            |
-| `ledger_entries`  | 2     | Append-only audit trail         |
-| `ticks`           | 3     | One row per simulation tick     |
-| `intents`         | 3     | Player action queue (API → sim) |
+Completed backend phases:
+- Phase 1 through Phase 11
 
-## API Endpoints
+Frontend work is planned in:
+- `docs/plan/FRONTEND_PLAN.md`
 
-| Method | Path                 | Auth | Phase | Purpose                          |
-| ------ | -------------------- | ---- | ----- | -------------------------------- |
-| `GET`  | `/health`            | No   | 1     | Health check                     |
-| `GET`  | `/ready`             | No   | 1     | DB + Redis connectivity          |
-| `POST` | `/auth/register`     | No   | 2     | Create account + starting grant  |
-| `POST` | `/auth/login`        | No   | 2     | JWT access + refresh tokens      |
-| `POST` | `/auth/refresh`      | No   | 2     | New access token                 |
-| `GET`  | `/players/me`        | Yes  | 2     | Profile + balance                |
-| `GET`  | `/players/me/ledger` | Yes  | 2     | Paginated personal ledger        |
-| `POST` | `/intents`           | Yes  | 3     | Submit intent (stored as QUEUED) |
-| `GET`  | `/simulation/status` | No   | 3     | Current tick, running state      |
-
-## Phase Status
-
-- [x] Phase 1 — Foundation & Infrastructure
-- [x] Phase 2 — Identity, Wallet & Ledger
-- [x] Phase 3 — Simulation Engine Core
-- [ ] Phase 4 — Dungeon Gates
-- [ ] Phase 5 — Market System
+For current schema, APIs, config, and conventions:
+- use `docs/CONTEXT.md` as authoritative current-state reference.

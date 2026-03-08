@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
+    Counter,
     CollectorRegistry,
     Gauge,
+    Histogram,
     generate_latest,
 )
 from sqlalchemy import func, select
@@ -17,14 +19,17 @@ from app.models.market import Order, OrderStatus, Trade
 from app.models.player import Player
 from app.models.tick import Tick
 from app.models.treasury import AccountType, SystemAccount
+from app.api.ws import get_active_ws_connections
 
 router = APIRouter(tags=["metrics"])
 
 REGISTRY = CollectorRegistry()
 
 dge_tick_number = Gauge("dge_tick_number", "Current tick number", registry=REGISTRY)
-dge_tick_duration_seconds = Gauge(
-    "dge_tick_duration_seconds", "Last tick duration in seconds", registry=REGISTRY
+dge_tick_duration_seconds = Histogram(
+    "dge_tick_duration_seconds",
+    "Tick duration in seconds",
+    registry=REGISTRY,
 )
 dge_intent_queue_depth = Gauge(
     "dge_intent_queue_depth", "Queued intents", registry=REGISTRY
@@ -35,7 +40,7 @@ dge_active_players_total = Gauge(
 dge_treasury_balance_micro = Gauge(
     "dge_treasury_balance_micro", "Treasury balance in micro-units", registry=REGISTRY
 )
-dge_trade_volume_micro = Gauge(
+dge_trade_volume_micro = Counter(
     "dge_trade_volume_micro", "Total trade volume in micro-units", registry=REGISTRY
 )
 dge_active_gates_total = Gauge(
@@ -47,13 +52,19 @@ dge_ws_connections = Gauge(
 dge_order_book_depth = Gauge(
     "dge_order_book_depth", "Open/partial orders", registry=REGISTRY
 )
-dge_events_fired_total = Gauge(
+dge_events_fired_total = Counter(
     "dge_events_fired_total", "Total events fired", registry=REGISTRY
 )
+
+_last_observed_tick_number = 0
+_last_trade_volume_total = 0
+_last_events_total = 0
 
 
 async def _refresh(db: AsyncSession) -> None:
     """Query DB and set all gauge values."""
+    global _last_observed_tick_number, _last_trade_volume_total, _last_events_total
+
     # Latest tick
     result = await db.execute(
         select(Tick).order_by(Tick.tick_number.desc()).limit(1)
@@ -63,12 +74,12 @@ async def _refresh(db: AsyncSession) -> None:
         dge_tick_number.set(tick.tick_number)
         if tick.started_at and tick.completed_at:
             duration = (tick.completed_at - tick.started_at).total_seconds()
-            dge_tick_duration_seconds.set(duration)
-        else:
-            dge_tick_duration_seconds.set(0)
+            # Observe each completed tick once.
+            if tick.tick_number > _last_observed_tick_number:
+                dge_tick_duration_seconds.observe(duration)
+                _last_observed_tick_number = tick.tick_number
     else:
         dge_tick_number.set(0)
-        dge_tick_duration_seconds.set(0)
 
     # Intent queue
     result = await db.execute(
@@ -96,7 +107,10 @@ async def _refresh(db: AsyncSession) -> None:
     result = await db.execute(
         select(func.coalesce(func.sum(Trade.price_micro * Trade.quantity), 0))
     )
-    dge_trade_volume_micro.set(result.scalar_one())
+    trade_volume_total = result.scalar_one()
+    if trade_volume_total > _last_trade_volume_total:
+        dge_trade_volume_micro.inc(trade_volume_total - _last_trade_volume_total)
+    _last_trade_volume_total = trade_volume_total
 
     # Active gates
     result = await db.execute(
@@ -114,9 +128,15 @@ async def _refresh(db: AsyncSession) -> None:
     )
     dge_order_book_depth.set(result.scalar_one())
 
+    # WebSocket connections (in-process)
+    dge_ws_connections.set(get_active_ws_connections())
+
     # Events
     result = await db.execute(select(func.count()).select_from(Event))
-    dge_events_fired_total.set(result.scalar_one())
+    events_total = result.scalar_one()
+    if events_total > _last_events_total:
+        dge_events_fired_total.inc(events_total - _last_events_total)
+    _last_events_total = events_total
 
 
 @router.get("/metrics")

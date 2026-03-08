@@ -2,44 +2,128 @@
 
 ## Prerequisites
 
-- Docker Desktop running
-- `make` installed (`choco install make` on Windows)
+- Docker Desktop
+- `make`
+- Optional local tools for convenience: `curl`, `jq`
 
-## Start Everything
+## Services and Ports
 
-    make up
+- API: `http://localhost:8000`
+- Postgres host port: `5433`
+- Redis host port: `6380`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000`
 
-Boots Postgres, Redis, API (port 8000), and worker.
+## Start / Stop
 
-## Verify
+```bash
+make up
+make down
+```
 
-    curl http://localhost:8000/health
-    curl http://localhost:8000/ready
+`make up` boots API, worker, Postgres, Redis, Prometheus, Grafana.
 
-## Run Migrations
+## Health Checks
 
-    make migrate
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/ready
+curl http://localhost:8000/simulation/status
+```
 
-## Create a New Migration
+## Database Migrations
 
-    make migration msg="add players table"
+```bash
+make migrate
+make migration msg="describe change"
+```
 
-## Run Tests
+If migration order drifts, inspect:
 
-    make test
+```bash
+docker compose exec api alembic current
+docker compose exec api alembic history
+```
 
-## Lint & Type Check
+## Test Commands
 
-    make lint
+```bash
+make test
+docker compose exec api pytest -q
+docker compose exec api pytest tests/test_admin.py -q
+```
 
-## View Logs
+## Lint / Type Check
 
-    make logs
+```bash
+make lint
+```
 
-## Full Reset (destroy volumes)
+## Logs and Debug
 
-    make reset
+```bash
+make logs
+docker compose logs -f api
+docker compose logs -f worker
+```
 
-## Interactive Shell (inside API container)
+## Interactive Shells
 
-    make shell
+```bash
+make shell
+docker compose exec api bash
+docker compose exec api python -m pytest -q
+```
+
+## Observability
+
+- Metrics endpoint: `GET /metrics`
+- Prometheus target should include API container at 5s scrape interval.
+- Grafana default credentials:
+  - user: `admin`
+  - pass: `admin`
+
+## Pause / Resume Simulation (Admin API)
+
+Requires admin JWT.
+
+```bash
+curl -X POST http://localhost:8000/admin/simulation/pause \
+  -H "Authorization: Bearer <ADMIN_ACCESS_TOKEN>"
+
+curl -X POST http://localhost:8000/admin/simulation/resume \
+  -H "Authorization: Bearer <ADMIN_ACCESS_TOKEN>"
+```
+
+## Conservation Audit
+
+```bash
+curl http://localhost:8000/admin/audit/conservation \
+  -H "Authorization: Bearer <ADMIN_ACCESS_TOKEN>"
+```
+
+Expected response includes `status` (`PASS`/`FAIL`) and `delta_micro`.
+
+## Load Test Harness (k6)
+
+Scripts in `infra/k6`:
+- `auth_load.js`
+- `order_storm.js`
+- `ws_connections.js`
+- `mixed_workload.js`
+
+Example:
+
+```bash
+docker run --rm -i --network host \
+  -v ${PWD}/infra/k6:/scripts \
+  grafana/k6 run /scripts/mixed_workload.js
+```
+
+## Reset
+
+```bash
+make reset
+```
+
+Use only when you want a full local rebuild (containers + volumes).

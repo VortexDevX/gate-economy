@@ -8,7 +8,12 @@ class EventResponse(BaseModel):
     id: UUID
     tick_id: int
     event_type: str
+    severity: str
+    target_type: str | None
     target_id: UUID | None
+    effects: dict | None
+    duration_ticks: int | None
+    expires_at_tick: int | None
     payload: dict | None
     created_at: datetime
 

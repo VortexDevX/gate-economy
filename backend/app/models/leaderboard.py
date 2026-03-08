@@ -13,8 +13,8 @@ class SeasonStatus(str, enum.Enum):
     COMPLETED = "COMPLETED"
 
 
-class PlayerNetWorth(Base):
-    __tablename__ = "player_net_worth"
+class LeaderboardEntry(Base):
+    __tablename__ = "leaderboard_entries"
 
     player_id: Mapped[UUID] = mapped_column(
         ForeignKey("players.id"), primary_key=True
@@ -57,3 +57,7 @@ class SeasonResult(Base):
     final_rank: Mapped[int] = mapped_column(Integer)
     final_score_micro: Mapped[int] = mapped_column(BigInteger)
     final_net_worth_micro: Mapped[int] = mapped_column(BigInteger)
+
+
+# Backward-compatible alias used across existing services/tests.
+PlayerNetWorth = LeaderboardEntry

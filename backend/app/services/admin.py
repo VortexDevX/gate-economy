@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.admin import ParamValueType, SimulationParameter
-from app.models.guild import Guild, GuildStatus
+from app.models.guild import Guild
 from app.models.ledger import AccountEntityType, LedgerEntry
 from app.models.player import Player
 from app.models.treasury import AccountType, SystemAccount
@@ -189,9 +189,7 @@ async def run_conservation_audit(session: AsyncSession) -> dict:
     player_sum = result.scalar_one()
 
     result = await session.execute(
-        select(func.coalesce(func.sum(Guild.treasury_micro), 0)).where(
-            Guild.status != GuildStatus.DISSOLVED
-        )
+        select(func.coalesce(func.sum(Guild.treasury_micro), 0))
     )
     guild_sum = result.scalar_one()
 

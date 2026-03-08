@@ -6,6 +6,7 @@
 │   │   │   ├── 📄 0077d445e221_add_gates_gate_rank_profiles_gate_shares.py
 │   │   │   ├── 📄 2e9f2d2c75d9_add_admin_role_and_simulation_parameters.py
 │   │   │   ├── 📄 4df4626355da_add_leaderboard_and_seasons.py
+│   │   │   ├── 📄 6f2b3df2a9f1_phase_8_10_canonical_alignment.py
 │   │   │   ├── 📄 7030291f0b68_add_orders_trades_market_prices_and_.py
 │   │   │   ├── 📄 8921b1e0d286_add_events_and_news.py
 │   │   │   ├── 📄 9db8473f1dcd_add_players_system_accounts_ledger_.py
@@ -124,6 +125,7 @@
 │   └── 📄 requirements.txt
 ├── 📁 docs/
 │   ├── 📁 plan/
+│   │   ├── 📄 FRONTEND_PLAN.md
 │   │   ├── 📄 PHASE_10_PLAN.md
 │   │   ├── 📄 PHASE_11_PLAN.md
 │   │   ├── 📄 PHASE_2_PLAN.md

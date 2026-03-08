@@ -38,5 +38,5 @@ Add anti-dominance friction and safety controls so no single strategy can perman
 
 ## Implementation Notes (Current Repo)
 - Float cap is now enforced at matching time (not intent validation) with default `max_player_ownership_pct = 0.80`.
-- Existing anti-exploit includes sink charges for maintenance/concentration/liquidity and is fully tested.
-- Follow-up task: migrate concentration handling from sink-charge model to pure yield-side reduction model for strict canonical parity.
+- Concentration is enforced yield-side in `distribute_yield` using the canonical payout bands.
+- Anti-exploit maintenance sink path now focuses on portfolio maintenance + liquidity decay.

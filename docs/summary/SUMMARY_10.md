@@ -1,5 +1,9 @@
 # Phase 10 Summary: Leaderboards & Seasons
 
+> Update (2026-03-08): Storage table has been renamed to canonical
+> `leaderboard_entries` (model alias `PlayerNetWorth` retained for compatibility).
+> See `docs/CONTEXT.md` for authoritative current schema naming.
+
 ## Status: ✅ COMPLETE
 
 **Tests added:** 20  
@@ -88,7 +92,7 @@
 
 | Table              | Purpose                                                    |
 | ------------------ | ---------------------------------------------------------- |
-| `player_net_worth` | Cached net worth, score, portfolio breakdown per player    |
+| `leaderboard_entries` | Cached net worth, score, portfolio breakdown per player |
 | `seasons`          | Season records with start/end ticks and status             |
 | `season_results`   | Frozen final standings per season (rank, score, net worth) |
 

@@ -1,5 +1,9 @@
 # DUNGEON GATE ECONOMY — BUILD PLAN
 
+> Note (2026-03-08): This is the original master planning document.
+> For current as-built backend truth, use `docs/CONTEXT.md`.
+> For active frontend execution plan, use `docs/plan/FRONTEND_PLAN.md`.
+
 ## Economic Model Summary (locked in)
 
 | Flow        | Direction          | Examples                                                                                                                            |

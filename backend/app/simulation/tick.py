@@ -36,10 +36,16 @@ from app.services.order_matching import (
 )
 from app.services.realtime import publish_tick_update
 from app.services.anti_exploit import run_anti_exploit_maintenance
+from app.services.admin import run_conservation_audit
 from app.simulation.rng import TickRNG, derive_seed
 from app.simulation.state_hash import compute_state_hash
 
 logger = structlog.get_logger()
+
+
+class InvariantViolationError(RuntimeError):
+    """Raised when the hard conservation invariant is violated."""
+
 
 # ── Intent processing ──
 
@@ -254,6 +260,15 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
         await check_season(session, tick_number, tick.id)
         if tick_number % settings.net_worth_update_interval == 0:
             await update_leaderboard(session, tick_number, tick.id)
+
+        # 14c. Hard invariant check (must hold every tick)
+        audit = await run_conservation_audit(session)
+        if audit["status"] != "PASS":
+            raise InvariantViolationError(
+                "Conservation invariant violated: "
+                f"total={audit['total_micro']} expected={audit['expected_micro']} "
+                f"delta={audit['delta_micro']}"
+            )
 
         # 15. Mark remaining PROCESSING intents as EXECUTED
         #     (REJECTED intents keep their status from step 6)

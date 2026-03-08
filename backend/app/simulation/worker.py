@@ -13,7 +13,7 @@ from sqlalchemy.pool import NullPool
 
 from app.config import settings
 from app.simulation.lock import SimulationLock
-from app.simulation.tick import execute_tick
+from app.simulation.tick import InvariantViolationError, execute_tick
 from app.services.admin import PAUSE_KEY
 
 # ── Celery app ──
@@ -117,6 +117,12 @@ async def _run_tick_async():
             await execute_tick(factory)
         finally:
             await engine.dispose()
+    except InvariantViolationError:
+        logger.exception("tick_halted_invariant_violation", worker_id=_worker_id)
+        try:
+            await redis.set(PAUSE_KEY, "1")
+        except Exception:
+            logger.warning("failed_to_set_pause_on_invariant_violation")
     except Exception:
         logger.exception("tick_error", worker_id=_worker_id)
     finally:

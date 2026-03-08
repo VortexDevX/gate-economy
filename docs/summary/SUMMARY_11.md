@@ -1,5 +1,9 @@
 # Phase 11 Summary: Admin & Observability
 
+> Update (2026-03-08, post Phase 8–10 parity pass):
+> Full backend suite baseline moved from 209 to 210 tests.
+> Metrics implementation now uses histogram/counter types where specified.
+
 **Status**: ✅ Complete
 **Tests added**: 20 (189 → 209)
 **Date completed**: 2026-03-08
@@ -73,15 +77,15 @@ All endpoints require authenticated ADMIN player.
 | Metric                       | Type  | Source                |
 | ---------------------------- | ----- | --------------------- |
 | `dge_tick_number`            | gauge | Latest tick           |
-| `dge_tick_duration_seconds`  | gauge | Last tick duration    |
+| `dge_tick_duration_seconds`  | histogram | Tick duration observations |
 | `dge_intent_queue_depth`     | gauge | Queued intents count  |
 | `dge_active_players_total`   | gauge | Human player count    |
 | `dge_treasury_balance_micro` | gauge | Treasury balance      |
-| `dge_trade_volume_micro`     | gauge | Total trade volume    |
+| `dge_trade_volume_micro`     | counter | Total trade volume    |
 | `dge_active_gates_total`     | gauge | Non-collapsed gates   |
 | `dge_ws_connections`         | gauge | WebSocket connections |
 | `dge_order_book_depth`       | gauge | Open/partial orders   |
-| `dge_events_fired_total`     | gauge | Total events          |
+| `dge_events_fired_total`     | counter | Total events          |
 
 - DB-backed snapshot on each scrape (no in-process counters to drift)
 - Uses isolated `CollectorRegistry` to avoid default collector pollution
@@ -198,7 +202,7 @@ All scripts support `BASE_URL` / `WS_URL` env vars for targeting different envir
 | Seasons            | 3     | create, create conflict, end no active                     |
 | Metrics            | 1     | all 10 metric names present                                |
 
-**Total: 209 tests passing**
+**Total: 210 tests passing (current baseline)**
 
 ---
 

@@ -42,5 +42,4 @@ Rank players by net worth in seasonal competition with inactivity decay and hist
 
 ## Implementation Notes (Current Repo)
 - Public API includes `GET /seasons/{season_id}/results` and `GET /leaderboard/me`.
-- Current storage uses `player_net_worth` as the live leaderboard state table.
-- Follow-up migration task: rename `player_net_worth` to canonical `leaderboard_entries` (or add compatibility view) to match naming in main plan exactly.
+- Storage now uses canonical table name `leaderboard_entries` (with `PlayerNetWorth` model alias retained for compatibility in existing code/tests).

@@ -50,5 +50,6 @@ Add stochastic world events, narrative news output, and real-time delivery to cl
 ## Implementation Notes (Current Repo)
 - WebSocket supports `WS /ws/feed` with JWT query token.
 - `GET /events` exists and is tested.
-- Existing implementation still uses simplified event/news payloads and an MVP taxonomy.
-- Follow-up migration task: normalize MVP schema/taxonomy to full canonical Phase 8 schema above.
+- Canonical table names/fields are now present (`news_items`, extended `events` fields).
+- Legacy event/news types are still kept for backward compatibility with existing services/tests.
+- Realtime payload is currently `tick_update` + compact news summary; richer per-player deltas can be added later without backend schema changes.

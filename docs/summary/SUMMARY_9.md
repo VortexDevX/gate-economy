@@ -1,5 +1,11 @@
 # Phase 9 Summary: Anti-Exploit & Balance
 
+> Update (2026-03-08): This historical summary reflects Phase 9 at completion time.
+> Current backend parity differs in two key ways:
+> 1) Concentration is enforced yield-side (banded payout reduction), not as a sink transfer.
+> 2) Float cap is 80% and enforced at matching time.
+> See `docs/CONTEXT.md` for authoritative current behavior.
+
 **Status:** ✅ Complete
 **Tests added:** 17
 **Cumulative tests:** 165
@@ -77,7 +83,7 @@ Hard limit preventing any single player from owning more than 50% of a gate's to
 | `concentration_penalty_rate`     | 0.001   | 0.1% of holding value per tick at threshold   |
 | `liquidity_decay_inactive_ticks` | 200     | Ticks without trade → illiquid                |
 | `liquidity_decay_rate`           | 0.0005  | 0.05% of holding value per tick when illiquid |
-| `max_player_ownership_pct`       | 0.50    | Max 50% of any gate's shares                  |
+| `max_player_ownership_pct`       | 0.80    | Max 80% of any gate's shares (current)        |
 
 ---
 

@@ -24,7 +24,7 @@
 | 12  | Frontend                    | 🔲 NEXT | —     | —                |
 | 13  | Hardening & Launch Prep     | 🔲      | —     | —                |
 
-**Baseline: 209 tests passing**
+**Baseline: 210 tests passing**
 
 ---
 
@@ -42,7 +42,7 @@ treasury_balance + SUM(player_balances) + SUM(guild_treasuries) = INITIAL_SEED
 | Faucet  | Treasury → Guild  | Yield to guild gate holdings, yield boom to guild holdings    |
 | Faucet  | Guild → Players   | Dividends (manual + auto)                                     |
 | Sink    | Player → Treasury | Trade fees, gate discovery cost, ISO proceeds, guild creation |
-| Sink    | Player → Treasury | Portfolio maintenance, concentration penalty, liquidity decay |
+| Sink    | Player → Treasury | Portfolio maintenance, liquidity decay |
 | Sink    | Guild → Treasury  | Guild maintenance                                             |
 | Lock    | Player → Treasury | Buy order escrow, AI buy escrow                               |
 | Lock    | Guild → Treasury  | Guild invest escrow                                           |
@@ -65,7 +65,7 @@ treasury_balance + SUM(player_balances) + SUM(guild_treasuries) = INITIAL_SEED
 
 `id` UUID PK · `account_type` ENUM('TREASURY') UQ · `balance_micro` BIGINT ≥0 · `created_at` TZ
 
-### ledger*entries *(append-only — no UPDATE/DELETE)\_
+### ledger_entries _(append-only — no UPDATE/DELETE)_
 
 `id` BIGSERIAL PK · `tick_id` INT NULL FK→ticks · `debit_type`/`credit_type` ENUM('PLAYER','SYSTEM','GUILD') · `debit_id`/`credit_id` UUID · `amount_micro` BIGINT >0 · `entry_type` EntryType · `memo` TEXT · `created_at` TZ
 
@@ -152,17 +152,19 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 
 ### events
 
-`id` UUID PK · `event_type` EventType · `tick_id` INT · `target_id` UUID NULL · `payload` JSONB NULL · `created_at` TZ
+`id` UUID PK · `event_type` EventType · `severity` EventSeverity · `target_type` EventTargetType NULL · `tick_id` INT · `target_id` UUID NULL · `effects` JSONB NULL · `duration_ticks` INT NULL · `expires_at_tick` INT NULL · `payload` JSONB NULL · `created_at` TZ
 
-**EventType**: STABILITY_SURGE, STABILITY_CRISIS, YIELD_BOOM, MARKET_SHOCK, DISCOVERY_SURGE
+**EventType**: MANA_SURGE, INSTABILITY_WAVE, ECONOMIC_BOOM, REGULATION_CRACKDOWN, GATE_RESONANCE, MARKET_PANIC, TREASURE_DISCOVERY, MANA_DROUGHT, STABILITY_SURGE, STABILITY_CRISIS, YIELD_BOOM, MARKET_SHOCK, DISCOVERY_SURGE
+**EventSeverity**: MINOR, MODERATE, MAJOR, CATASTROPHIC
+**EventTargetType**: GLOBAL, GATE, GUILD, MARKET
 
-### news
+### news_items
 
 `id` UUID PK · `tick_id` INT · `headline` VARCHAR(200) · `body` TEXT NULL · `category` NewsCategory · `importance` INT default 1 · `related_entity_type` VARCHAR(50) NULL · `related_entity_id` UUID NULL · `created_at` TZ
 
-**NewsCategory**: GATE, MARKET, GUILD, WORLD
+**NewsCategory**: EVENT, GATE, MARKET, GUILD, LEADERBOARD, WORLD
 
-### player_net_worth
+### leaderboard_entries
 
 `player_id` UUID PK FK→players · `net_worth_micro` BIGINT default 0 · `score_micro` BIGINT default 0 · `balance_micro` BIGINT default 0 · `portfolio_micro` BIGINT default 0 · `last_active_tick` INT default 0 · `updated_at_tick` INT default 0
 
@@ -340,7 +342,7 @@ dungeon-gate-economy/
 │ │ ├── services/ # admin, ai_traders, anti_exploit, auth, event_engine, fee_calculator, gate_lifecycle, guild_manager, leaderboard, news_generator, order_matching, realtime, transfer
 │ │ ├── simulation/ # lock, rng, state_hash, tick, worker
 │ │ ├── config.py, database.py, main.py
-│ ├── tests/ # 24 test files, 209 tests
+│ ├── tests/ # 24 test files, 210 tests
 │ ├── Dockerfile, alembic.ini, pyproject.toml, requirements.txt
 ├── docs/
 │ ├── plan/ # PLAN.md + PHASE_X_PLAN.md files
@@ -477,13 +479,14 @@ Before writing any code for a new phase, ask the user for the current versions o
 ### 15. Anti-Exploit Patterns
 
 - Anti-exploit runs in step 14 (after events, before intent finalization).
-- Three sequential mechanisms: portfolio maintenance → concentration penalty → liquidity decay.
+- Maintenance sink mechanisms: portfolio maintenance → liquidity decay.
+- Concentration is enforced yield-side in `distribute_yield` (banded payout reduction), not as a separate sink transfer.
 - Each mechanism sees balance after prior charges — no double-spending.
 - `_charge_or_drain` helper: if player can't cover full cost, charges whatever is available (floor at 0).
 - Float cap checked at matching time for GATE_SHARE BUY orders.
 - OFFERING gates exempt from float cap — allows ISO distribution.
 - GUILD_SHARE orders exempt from float cap.
-- AI players subject to portfolio/concentration/decay same as humans.
+- AI players subject to portfolio/liquidity maintenance rules same as humans.
 - Global autouse fixture disables anti-exploit rates in tests; `_enable_anti_exploit` fixture re-enables for anti-exploit-specific tests.
 
 ### 16. Leaderboard & Season Patterns
@@ -498,7 +501,7 @@ Before writing any code for a new phase, ask the user for the current versions o
 - Season creation uses savepoints to handle concurrent inserts gracefully.
 - AI players included in computation for data completeness; filtered at API layer.
 - API tests authenticate via register → login → use `access_token` (register returns `PlayerResponse`, not tokens).
-- API tests insert `PlayerNetWorth` directly rather than triggering full leaderboard computation.
+- API tests insert leaderboard rows via `PlayerNetWorth` model alias (table: `leaderboard_entries`) rather than triggering full computation.
 - `SimulationLock` accepts optional `lock_key` parameter for test isolation from global pause.
 
 ### 17. Admin Patterns

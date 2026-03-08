@@ -28,6 +28,17 @@ RANK_ORDER: list[GateRank] = list(GateRank)
 RANK_UPGRADE_CHANCE: float = 0.15
 
 
+def _yield_concentration_multiplier(ownership_pct: float) -> float:
+    """Yield effectiveness by concentration band (Phase 9 canonical model)."""
+    if ownership_pct > 0.90:
+        return 0.30
+    if ownership_pct > 0.75:
+        return 0.60
+    if ownership_pct > 0.50:
+        return 0.80
+    return 1.0
+
+
 # ── Internal helpers ──
 
 
@@ -297,6 +308,8 @@ async def distribute_yield(
     """Pay yield from treasury to shareholders of ACTIVE gates.
 
     - Only ACTIVE gates yield (not OFFERING, UNSTABLE, or COLLAPSED).
+    - Concentration is handled yield-side:
+      >50% => 80%, >75% => 60%, >90% => 30%.
     - Treasury-held shares are skipped (no self-payment).
     - Guild gate holdings receive yield to guild treasury.
     - Insolvent guilds receive 50% yield penalty.
@@ -344,10 +357,14 @@ async def distribute_yield(
         if not player_shares and not guild_holdings:
             continue  # only treasury holds shares
 
-        # Pay player shareholders
+        # Pay player shareholders (concentration reduction applied here)
         player_shares.sort(key=lambda s: str(s.player_id))
         for share in player_shares:
-            payout = effective_yield * share.quantity // total_held
+            base_payout = effective_yield * share.quantity // total_held
+            ownership_pct = share.quantity / gate.total_shares
+            payout = int(
+                base_payout * _yield_concentration_multiplier(ownership_pct)
+            )
             if payout <= 0:
                 continue
             try:
@@ -370,7 +387,7 @@ async def distribute_yield(
                 )
                 return
 
-        # Pay guild shareholders
+        # Pay guild shareholders (guild-side concentration is not reduced here)
         guild_holdings.sort(key=lambda gh: str(gh.guild_id))
         for gh in guild_holdings:
             payout = effective_yield * gh.quantity // total_held
