@@ -24,6 +24,7 @@ from app.models.guild import Guild, GuildGateHolding, GuildMember, GuildShare
 from app.models.event import Event
 from app.models.news import News
 from app.models.leaderboard import PlayerNetWorth, Season, SeasonResult
+from app.models.admin import SimulationParameter
 
 
 def _make_engine():
@@ -54,6 +55,7 @@ async def _reset_database(factory) -> None:
         await session.execute(delete(GateShare))
         await session.execute(delete(Gate))
         await session.execute(delete(LedgerEntry))
+        await session.execute(delete(SimulationParameter))
         await session.execute(delete(Player))
         await session.execute(delete(Tick))
 

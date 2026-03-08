@@ -14,6 +14,7 @@ from sqlalchemy.pool import NullPool
 from app.config import settings
 from app.simulation.lock import SimulationLock
 from app.simulation.tick import execute_tick
+from app.services.admin import PAUSE_KEY
 
 # ── Celery app ──
 
@@ -94,6 +95,14 @@ def run_tick():
 async def _run_tick_async():
     """Acquire lock, execute tick, release lock. All async."""
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
+
+    # Check pause flag before attempting lock
+    paused = await redis.get(PAUSE_KEY)
+    if paused:
+        logger.debug("tick_skipped_paused", worker_id=_worker_id)
+        await redis.aclose()
+        return
+
     lock = SimulationLock(redis, _worker_id)
     acquired = False
 

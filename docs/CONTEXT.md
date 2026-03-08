@@ -20,11 +20,11 @@
 | 8   | Events, News & Real-time    | ✅ Done | 19    | 148              |
 | 9   | Anti-Exploit & Balance      | ✅ Done | 17    | 165              |
 | 10  | Leaderboards & Seasons      | ✅ Done | 20    | 185              |
-| 11  | Admin & Observability       | 🔲 NEXT | —     | —                |
-| 12  | Frontend                    | 🔲      | —     | —                |
+| 11  | Admin & Observability       | ✅ Done | 20    | 209              |
+| 12  | Frontend                    | 🔲 NEXT | —     | —                |
 | 13  | Hardening & Launch Prep     | 🔲      | —     | —                |
 
-**Baseline: 189 tests passing**
+**Baseline: 209 tests passing**
 
 ---
 
@@ -57,13 +57,15 @@ treasury_balance + SUM(player_balances) + SUM(guild_treasuries) = INITIAL_SEED
 
 ### players
 
-`id` UUID PK · `username` VARCHAR UQ · `email` VARCHAR UQ · `password_hash` VARCHAR · `balance_micro` BIGINT ≥0 · `is_ai` BOOL default FALSE · `created_at`/`updated_at` TZ
+`id` UUID PK · `username` VARCHAR UQ · `email` VARCHAR UQ · `password_hash` VARCHAR · `balance_micro` BIGINT ≥0 · `is_ai` BOOL default FALSE · `role` PlayerRole default PLAYER · `created_at`/`updated_at` TZ
+
+**PlayerRole**: PLAYER, ADMIN
 
 ### system_accounts
 
 `id` UUID PK · `account_type` ENUM('TREASURY') UQ · `balance_micro` BIGINT ≥0 · `created_at` TZ
 
-### ledger_entries _(append-only — no UPDATE/DELETE)_
+### ledger*entries *(append-only — no UPDATE/DELETE)\_
 
 `id` BIGSERIAL PK · `tick_id` INT NULL FK→ticks · `debit_type`/`credit_type` ENUM('PLAYER','SYSTEM','GUILD') · `debit_id`/`credit_id` UUID · `amount_micro` BIGINT >0 · `entry_type` EntryType · `memo` TEXT · `created_at` TZ
 
@@ -174,6 +176,12 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 
 `season_id` INT PK FK→seasons · `player_id` UUID PK FK→players · `final_rank` INT · `final_score_micro` BIGINT · `final_net_worth_micro` BIGINT
 
+### simulation_parameters
+
+`key` VARCHAR(100) PK · `value` VARCHAR(500) · `value_type` ParamValueType · `description` TEXT NULL · `updated_at` TZ · `updated_by` UUID NULL FK→players
+
+**ParamValueType**: INT, FLOAT, BOOL, STRING
+
 ---
 
 ## Tick Pipeline (Current State)
@@ -183,6 +191,7 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 2.  Derive seed + create TickRNG ✅ P3
 3.  Insert tick record ✅ P3
 4.  Load treasury_id ✅ P4
+    4b. Load runtime parameters from DB ✅ P11
 5.  Collect QUEUED intents → mark PROCESSING ✅ P3
 6.  Process intents by type:
     DISCOVER_GATE ✅ P4
@@ -213,35 +222,45 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 
 ## API Endpoints (Cumulative)
 
-| Method | Path                                   | Auth | Phase | Purpose                    |
-| ------ | -------------------------------------- | ---- | ----- | -------------------------- |
-| GET    | /health                                | No   | 1     | Health check               |
-| GET    | /ready                                 | No   | 1     | DB + Redis connectivity    |
-| POST   | /auth/register                         | No   | 2     | Create account + grant     |
-| POST   | /auth/login                            | No   | 2     | JWT access + refresh       |
-| POST   | /auth/refresh                          | No   | 2     | New access token           |
-| GET    | /players/me                            | Yes  | 2     | Profile + balance          |
-| GET    | /players/me/ledger                     | Yes  | 2     | Paginated ledger           |
-| POST   | /intents                               | Yes  | 3     | Submit intent              |
-| GET    | /simulation/status                     | No   | 3     | Tick number, state         |
-| GET    | /gates                                 | No   | 4     | List gates (filter/page)   |
-| GET    | /gates/{id}                            | No   | 4     | Gate detail + shareholders |
-| GET    | /gates/rank-profiles                   | No   | 4     | Rank reference data        |
-| GET    | /orders/me                             | Yes  | 5     | My orders (paginated)      |
-| GET    | /market/{asset_type}/{asset_id}        | No   | 5     | Price, bid/ask, volume     |
-| GET    | /market/{asset_type}/{asset_id}/book   | No   | 5     | Aggregated order book      |
-| GET    | /market/{asset_type}/{asset_id}/trades | No   | 5     | Recent trades (paginated)  |
-| GET    | /guilds                                | No   | 6     | List guilds (filter/page)  |
-| GET    | /guilds/{id}                           | No   | 6     | Guild detail + members     |
-| GET    | /news                                  | No   | 8     | Paginated news feed        |
-| GET    | /events                                | No   | 8     | Paginated events feed      |
-| WS     | /ws                                    | No   | 8     | Real-time tick updates     |
-| WS     | /ws/feed                               | Yes  | 8     | Authenticated realtime feed |
-| GET    | /leaderboard                           | No   | 10    | Paginated rankings         |
-| GET    | /leaderboard/me                        | Yes  | 10    | Player's rank + breakdown  |
-| GET    | /seasons                               | No   | 10    | List seasons (paginated)   |
-| GET    | /seasons/current                       | No   | 10    | Current active season      |
-| GET    | /seasons/{id}/results                  | No   | 10    | Completed season standings |
+| Method | Path                                   | Auth  | Phase | Purpose                      |
+| ------ | -------------------------------------- | ----- | ----- | ---------------------------- |
+| GET    | /health                                | No    | 1     | Health check                 |
+| GET    | /ready                                 | No    | 1     | DB + Redis connectivity      |
+| POST   | /auth/register                         | No    | 2     | Create account + grant       |
+| POST   | /auth/login                            | No    | 2     | JWT access + refresh         |
+| POST   | /auth/refresh                          | No    | 2     | New access token             |
+| GET    | /players/me                            | Yes   | 2     | Profile + balance            |
+| GET    | /players/me/ledger                     | Yes   | 2     | Paginated ledger             |
+| POST   | /intents                               | Yes   | 3     | Submit intent                |
+| GET    | /simulation/status                     | No    | 3     | Tick number, state           |
+| GET    | /gates                                 | No    | 4     | List gates (filter/page)     |
+| GET    | /gates/{id}                            | No    | 4     | Gate detail + shareholders   |
+| GET    | /gates/rank-profiles                   | No    | 4     | Rank reference data          |
+| GET    | /orders/me                             | Yes   | 5     | My orders (paginated)        |
+| GET    | /market/{asset_type}/{asset_id}        | No    | 5     | Price, bid/ask, volume       |
+| GET    | /market/{asset_type}/{asset_id}/book   | No    | 5     | Aggregated order book        |
+| GET    | /market/{asset_type}/{asset_id}/trades | No    | 5     | Recent trades (paginated)    |
+| GET    | /guilds                                | No    | 6     | List guilds (filter/page)    |
+| GET    | /guilds/{id}                           | No    | 6     | Guild detail + members       |
+| GET    | /news                                  | No    | 8     | Paginated news feed          |
+| GET    | /events                                | No    | 8     | Paginated events feed        |
+| WS     | /ws                                    | No    | 8     | Real-time tick updates       |
+| WS     | /ws/feed                               | Yes   | 8     | Authenticated realtime feed  |
+| GET    | /leaderboard                           | No    | 10    | Paginated rankings           |
+| GET    | /leaderboard/me                        | Yes   | 10    | Player's rank + breakdown    |
+| GET    | /seasons                               | No    | 10    | List seasons (paginated)     |
+| GET    | /seasons/current                       | No    | 10    | Current active season        |
+| GET    | /seasons/{id}/results                  | No    | 10    | Completed season standings   |
+| GET    | /admin/parameters                      | Admin | 11    | List tunable parameters      |
+| PATCH  | /admin/parameters/{key}                | Admin | 11    | Update parameter value       |
+| POST   | /admin/simulation/pause                | Admin | 11    | Pause tick loop              |
+| POST   | /admin/simulation/resume               | Admin | 11    | Resume tick loop             |
+| POST   | /admin/events/trigger                  | Admin | 11    | Manually trigger event       |
+| GET    | /admin/treasury                        | Admin | 11    | Treasury balance + flows     |
+| GET    | /admin/audit/conservation              | Admin | 11    | Conservation audit PASS/FAIL |
+| GET    | /admin/ledger                          | Admin | 11    | Query ledger with filters    |
+| POST   | /admin/seasons                         | Admin | 11    | Create or end season         |
+| GET    | /metrics                               | No    | 11    | Prometheus metrics           |
 
 ---
 
@@ -312,25 +331,30 @@ PK: (`asset_type`, `asset_id`) · `last_price_micro` BIGINT NULL · `best_bid_mi
 dungeon-gate-economy/
 ├── .github/workflows/ci.yml
 ├── backend/
-│   ├── alembic/versions/              # 7 migrations
-│   ├── app/
-│   │   ├── api/                       # auth, events, gates, guilds, health, intents, leaderboard, market, news, orders, players, simulation, ws
-│   │   ├── core/                      # auth (JWT/Argon2), deps (get_db, get_redis, get_current_player)
-│   │   ├── models/                    # base, event, gate, guild, intent, leaderboard, ledger, market, news, player, tick, treasury
-│   │   ├── schemas/                   # auth, event, gate, guild, intent, leaderboard, market, news, player, simulation
-│   │   ├── services/                  # ai_traders, anti_exploit, auth, event_engine, fee_calculator, gate_lifecycle, guild_manager, leaderboard, news_generator, order_matching, realtime, transfer
-│   │   ├── simulation/               # lock, rng, state_hash, tick, worker
-│   │   ├── config.py, database.py, main.py
-│   ├── tests/                         # 23 test files, 189 tests
-│   ├── Dockerfile, alembic.ini, pyproject.toml, requirements.txt
+│ ├── alembic/versions/ # 8 migrations
+│ ├── app/
+│ │ ├── api/ # admin, auth, events, gates, guilds, health, intents, leaderboard, market, metrics, news, orders, players, simulation, ws
+│ │ ├── core/ # admin (require_admin), auth (JWT/Argon2), deps (get_db, get_redis, get_current_player)
+│ │ ├── models/ # admin, base, event, gate, guild, intent, leaderboard, ledger, market, news, player, tick, treasury
+│ │ ├── schemas/ # admin, auth, event, gate, guild, intent, leaderboard, market, news, player, simulation
+│ │ ├── services/ # admin, ai_traders, anti_exploit, auth, event_engine, fee_calculator, gate_lifecycle, guild_manager, leaderboard, news_generator, order_matching, realtime, transfer
+│ │ ├── simulation/ # lock, rng, state_hash, tick, worker
+│ │ ├── config.py, database.py, main.py
+│ ├── tests/ # 24 test files, 209 tests
+│ ├── Dockerfile, alembic.ini, pyproject.toml, requirements.txt
 ├── docs/
-│   ├── plan/                          # PLAN.md + PHASE_X_PLAN.md files
-│   ├── postman/                       # Postman collection
-│   ├── summary/                       # SUMMARY_1-10.md
-│   ├── CONTEXT.md                     # ← THIS FILE
-│   ├── architecture.md, runbook.md
-├── frontend/src/                      # .gitkeep only
-├── infra/                             # prometheus.yml, grafana/, k6/
+│ ├── plan/ # PLAN.md + PHASE_X_PLAN.md files
+│ ├── postman/ # Postman collection
+│ ├── summary/ # SUMMARY_1-11.md
+│ ├── CONTEXT.md # ← THIS FILE
+│ ├── architecture.md, runbook.md
+├── frontend/src/ # .gitkeep only
+├── infra/
+│ ├── grafana/
+│ │ ├── dashboards/ # dge-overview.json
+│ │ └── provisioning/ # datasources + dashboards YAML
+│ ├── k6/ # auth_load.js, order_storm.js, ws_connections.js, mixed_workload.js
+│ └── prometheus.yml
 ├── .env.example, Makefile, docker-compose.yml
 ```
 
@@ -477,6 +501,19 @@ Before writing any code for a new phase, ask the user for the current versions o
 - API tests insert `PlayerNetWorth` directly rather than triggering full leaderboard computation.
 - `SimulationLock` accepts optional `lock_key` parameter for test isolation from global pause.
 
+### 17. Admin Patterns
+
+- Admin endpoints use `AdminPlayer` dependency (reuses JWT auth + role check via `PlayerRole.ADMIN`).
+- No API-key auth — admin is a player role, not a separate auth mechanism.
+- Parameter updates apply to in-memory settings immediately (same process) and persist to DB.
+- Worker picks up DB-persisted parameters at next tick start via `load_parameters_into_settings()`.
+- Pause/resume uses Redis key `simulation:paused` — worker checks before lock acquisition.
+- Conservation audit is read-only — reports PASS/FAIL + delta, does not halt or correct.
+- Pause/resume endpoints create short-lived Redis connections (not shared pool) to avoid event loop binding issues in tests.
+- 42 gameplay parameters are whitelisted as tunable; infrastructure secrets are never exposed.
+- Admin-triggered events use existing `Event` model with `admin_triggered: true` in payload.
+- Prometheus metrics are DB-backed gauges refreshed on each scrape — no in-process counter drift.
+
 <!-- CONVENTIONS: Add new patterns discovered during implementation -->
 
 ---
@@ -485,7 +522,6 @@ Before writing any code for a new phase, ask the user for the current versions o
 
 | Phase  | One-line Summary                                                       |
 | ------ | ---------------------------------------------------------------------- |
-| **11** | Admin API, tunable parameters, Prometheus/Grafana, k6 load tests       |
 | **12** | React frontend (all player-facing features)                            |
 | **13** | Replay tests, conservation soak, fuzz, security audit, load test, docs |
 

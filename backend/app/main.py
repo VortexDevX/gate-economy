@@ -27,6 +27,8 @@ from app.models.treasury import AccountType, SystemAccount
 from app.models.ledger import AccountEntityType, EntryType
 from app.models.player import Player
 from app.services.transfer import transfer
+from app.api.admin import router as admin_router
+from app.api.metrics import router as metrics_router
 
 
 def setup_logging() -> None:
@@ -233,6 +235,16 @@ async def seed_ai_players() -> None:
             log.info("ai_player_seeded", username=username, budget_micro=budget)
 
         await session.commit()
+
+async def seed_simulation_parameters() -> None:
+    """Seed tunable parameters from current settings. Idempotent."""
+    log = structlog.get_logger()
+    factory = get_session_factory()
+    async with factory() as session:
+        from app.services.admin import seed_parameters
+        created = await seed_parameters(session)
+        await session.commit()
+        log.info("simulation_parameters_seeded", created=created)
         
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -242,6 +254,7 @@ async def lifespan(app: FastAPI):
     await seed_treasury()
     await seed_gate_rank_profiles()
     await seed_ai_players()
+    await seed_simulation_parameters()
     yield
     log.info("application_shutdown")
 
@@ -293,7 +306,9 @@ def create_app() -> FastAPI:
     app.include_router(events_router)
     app.include_router(leaderboard_router)
     app.include_router(ws_router)
-
+    app.include_router(admin_router)
+    app.include_router(metrics_router)
+    
     return app
 
 

@@ -1,10 +1,16 @@
+import enum
 import uuid
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, String
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Enum, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
+
+
+class PlayerRole(str, enum.Enum):
+    PLAYER = "PLAYER"
+    ADMIN = "ADMIN"
 
 
 class Player(TimestampMixin, Base):
@@ -30,4 +36,10 @@ class Player(TimestampMixin, Base):
     )
     is_ai: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
+    )
+    role: Mapped[PlayerRole] = mapped_column(
+        Enum(PlayerRole, name="playerrole"),
+        nullable=False,
+        default=PlayerRole.PLAYER,
+        server_default="PLAYER",
     )

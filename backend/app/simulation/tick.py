@@ -185,6 +185,10 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
         )
         treasury_id: _uuid.UUID = result.scalar_one()
 
+        # 4b. Load runtime parameters from DB (admin changes reflected within 1 tick)
+        from app.services.admin import load_parameters_into_settings
+        await load_parameters_into_settings(session)
+
         # 5. Collect QUEUED intents → mark PROCESSING
         result = await session.execute(
             select(Intent)

@@ -1,0 +1,170 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Tick Number",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "expr": "dge_tick_number", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": { "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Tick Duration (s)",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "targets": [{ "expr": "dge_tick_duration_seconds", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "max": 5,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Treasury Balance",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "targets": [{ "expr": "dge_treasury_balance_micro", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": { "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Active Players",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "targets": [{ "expr": "dge_active_players_total", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": { "steps": [{ "color": "purple", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Active Gates",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "targets": [{ "expr": "dge_active_gates_total", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": { "steps": [{ "color": "orange", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "WebSocket Connections",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "targets": [{ "expr": "dge_ws_connections", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": { "steps": [{ "color": "cyan", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Intent Queue Depth",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "dge_intent_queue_depth",
+          "legendFormat": "queued",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }
+    },
+    {
+      "title": "Trade Volume (micro)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 4 },
+      "targets": [
+        {
+          "expr": "dge_trade_volume_micro",
+          "legendFormat": "volume",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }
+    },
+    {
+      "title": "Order Book Depth",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 4 },
+      "targets": [
+        {
+          "expr": "dge_order_book_depth",
+          "legendFormat": "open orders",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }
+    },
+    {
+      "title": "Events Fired",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 10 },
+      "targets": [
+        {
+          "expr": "dge_events_fired_total",
+          "legendFormat": "events",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] }
+    },
+    {
+      "title": "Tick Duration Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 10 },
+      "targets": [
+        {
+          "expr": "dge_tick_duration_seconds",
+          "legendFormat": "duration",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["dge"],
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "DGE Overview",
+  "uid": "dge-overview",
+  "version": 1
+}

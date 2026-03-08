@@ -125,17 +125,17 @@ Create `api/admin.py` and register in `main.py`.
 
 ### Endpoints (must match `PLAN.md`)
 
-| Method | Path                         | Purpose                                   |
-| ------ | ---------------------------- | ----------------------------------------- |
-| POST   | `/admin/simulation/pause`    | Pause tick loop                           |
-| POST   | `/admin/simulation/resume`   | Resume tick loop                          |
-| GET    | `/admin/parameters`          | List all parameters                       |
-| PATCH  | `/admin/parameters/{key}`    | Update one parameter                      |
-| POST   | `/admin/events/trigger`      | Manually trigger event                    |
-| GET    | `/admin/treasury`            | Treasury balance + recent flows           |
-| GET    | `/admin/audit/conservation`  | Run conservation audit, return PASS/FAIL  |
-| GET    | `/admin/ledger`              | Query ledger with filters                 |
-| POST   | `/admin/seasons`             | Create/end season                         |
+| Method | Path                        | Purpose                                  |
+| ------ | --------------------------- | ---------------------------------------- |
+| POST   | `/admin/simulation/pause`   | Pause tick loop                          |
+| POST   | `/admin/simulation/resume`  | Resume tick loop                         |
+| GET    | `/admin/parameters`         | List all parameters                      |
+| PATCH  | `/admin/parameters/{key}`   | Update one parameter                     |
+| POST   | `/admin/events/trigger`     | Manually trigger event                   |
+| GET    | `/admin/treasury`           | Treasury balance + recent flows          |
+| GET    | `/admin/audit/conservation` | Run conservation audit, return PASS/FAIL |
+| GET    | `/admin/ledger`             | Query ledger with filters                |
+| POST   | `/admin/seasons`            | Create/end season                        |
 
 ### Auth
 
@@ -195,10 +195,10 @@ Implementation notes:
 
 Create scripts matching `PLAN.md`:
 
-| Script            | Scenario                                              |
-| ----------------- | ----------------------------------------------------- |
-| `auth_load.js`    | 1,000 concurrent registrations + logins               |
-| `order_storm.js`  | 500 concurrent users placing orders every tick        |
+| Script              | Scenario                                              |
+| ------------------- | ----------------------------------------------------- |
+| `auth_load.js`      | 1,000 concurrent registrations + logins               |
+| `order_storm.js`    | 500 concurrent users placing orders every tick        |
 | `ws_connections.js` | 1,000 WebSocket connections, measure delivery latency |
 | `mixed_workload.js` | 60% read, 30% orders, 10% discovery                   |
 

@@ -10,3 +10,4 @@ from app.models.treasury import SystemAccount  # noqa: F401
 from app.models.event import Event  # noqa: F401
 from app.models.news import News  # noqa: F401
 from app.models.leaderboard import PlayerNetWorth, Season, SeasonResult  # noqa: F401
+from app.models.admin import SimulationParameter  # noqa: F401
