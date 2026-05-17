@@ -57,8 +57,8 @@ dge_events_fired_total = Counter(
 )
 
 _last_observed_tick_number = 0
-_last_trade_volume_total = 0
-_last_events_total = 0
+_last_trade_volume_total: float = 0.0
+_last_events_total: float = 0.0
 
 
 async def _refresh(db: AsyncSession) -> None:
@@ -101,13 +101,14 @@ async def _refresh(db: AsyncSession) -> None:
             SystemAccount.account_type == AccountType.TREASURY
         )
     )
-    dge_treasury_balance_micro.set(result.scalar_one_or_none() or 0)
+    treasury_val = result.scalar_one_or_none()
+    dge_treasury_balance_micro.set(float(treasury_val) if treasury_val else 0.0)
 
     # Trade volume
     result = await db.execute(
         select(func.coalesce(func.sum(Trade.price_micro * Trade.quantity), 0))
     )
-    trade_volume_total = result.scalar_one()
+    trade_volume_total = float(result.scalar_one())
     if trade_volume_total > _last_trade_volume_total:
         dge_trade_volume_micro.inc(trade_volume_total - _last_trade_volume_total)
     _last_trade_volume_total = trade_volume_total
@@ -133,7 +134,7 @@ async def _refresh(db: AsyncSession) -> None:
 
     # Events
     result = await db.execute(select(func.count()).select_from(Event))
-    events_total = result.scalar_one()
+    events_total = float(result.scalar_one())
     if events_total > _last_events_total:
         dge_events_fired_total.inc(events_total - _last_events_total)
     _last_events_total = events_total

@@ -252,10 +252,12 @@ async def cancel_collapsed_gate_orders(
         )
         for order in result.scalars().all():
             if order.side == OrderSide.BUY and order.escrow_micro > 0:
+                to_type = AccountEntityType.GUILD if order.guild_id else AccountEntityType.PLAYER
+                to_id = order.guild_id if order.guild_id else order.player_id
                 await transfer(
                     session=session,
                     from_type=AccountEntityType.SYSTEM, from_id=treasury_id,
-                    to_type=AccountEntityType.PLAYER, to_id=order.player_id,
+                    to_type=to_type, to_id=to_id,  # type: ignore[arg-type]
                     amount=order.escrow_micro, entry_type=EntryType.ESCROW_RELEASE,
                     tick_id=tick_id, memo=f"Guild dissolved: {order.asset_id}",
                 )

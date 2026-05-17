@@ -20,3 +20,8 @@ class IntentResponse(BaseModel):
     processed_tick: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class IntentListResponse(BaseModel):
+    items: list[IntentResponse]
+    total: int

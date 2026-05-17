@@ -7,4 +7,5 @@ class SimulationStatus(BaseModel):
     current_tick: int
     last_completed_at: datetime | None = None
     is_running: bool
+    is_paused: bool = False
     treasury_balance: int

@@ -1,7 +1,7 @@
 import uuid
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -51,10 +51,13 @@ async def register(
     Register a new player and grant starting balance from treasury.
     Both operations happen in the same DB transaction.
     """
+    normalized_email = email.strip().lower()
+
     # Check uniqueness
     existing = await session.execute(
         select(Player).where(
-            (Player.username == username) | (Player.email == email)
+            (Player.username == username)
+            | (func.lower(Player.email) == normalized_email)
         )
     )
     if existing.scalar_one_or_none() is not None:
@@ -64,7 +67,7 @@ async def register(
     player = Player(
         id=uuid.uuid4(),
         username=username,
-        email=email,
+        email=normalized_email,
         password_hash=hash_password(password),
         balance_micro=0,
         is_ai=False,
@@ -87,7 +90,6 @@ async def register(
     )
 
     await session.commit()
-    await session.refresh(player)
 
     log.info("player_registered", player_id=str(player.id), username=username)
     return player
@@ -99,8 +101,9 @@ async def login(
     password: str,
 ) -> dict:
     """Authenticate player, return access + refresh tokens."""
+    normalized_email = email.strip().lower()
     result = await session.execute(
-        select(Player).where(Player.email == email)
+        select(Player).where(func.lower(Player.email) == normalized_email)
     )
     player = result.scalar_one_or_none()
 

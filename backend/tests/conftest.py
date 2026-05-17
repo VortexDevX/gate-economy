@@ -1,6 +1,8 @@
 import asyncio
+import os
 import uuid
 from collections.abc import AsyncGenerator
+from urllib.parse import urlparse
 
 import pytest
 import pytest_asyncio
@@ -13,7 +15,7 @@ from sqlalchemy.pool import NullPool
 from app.config import settings
 from app.core.deps import get_db
 from app.main import app
-from app.models.gate import Gate, GateShare
+from app.models.gate import Gate, GateRank, GateRankProfile, GateShare
 from app.models.intent import Intent
 from app.models.ledger import LedgerEntry
 from app.models.player import Player
@@ -25,6 +27,30 @@ from app.models.event import Event
 from app.models.news import News
 from app.models.leaderboard import PlayerNetWorth, Season, SeasonResult
 from app.models.admin import SimulationParameter
+
+
+def _assert_safe_test_database() -> None:
+    """Fail fast if tests are pointed at a non-test database.
+
+    Tests wipe all tables before each case. Running against the dev/runtime DB
+    causes real user/account data loss.
+    """
+    db_url = settings.database_url
+    parsed = urlparse(db_url.replace("+asyncpg", ""))
+    db_name = parsed.path.lstrip("/").lower()
+
+    allow_unsafe = os.getenv("PYTEST_ALLOW_NON_TEST_DB", "0") == "1"
+    if not allow_unsafe and "test" not in db_name:
+        raise RuntimeError(
+            "Unsafe pytest database detected. "
+            f"database_url points to '{db_name}', which does not look like a test DB. "
+            "Set DATABASE_URL to a dedicated test database "
+            "(example: .../dungeon_gate_test) or set PYTEST_ALLOW_NON_TEST_DB=1 "
+            "only if you intentionally want destructive resets."
+        )
+
+
+_assert_safe_test_database()
 
 
 def _make_engine():
@@ -75,6 +101,106 @@ async def _reset_database(factory) -> None:
             )
         else:
             treasury.balance_micro = settings.initial_seed_micro
+
+        # Ensure full gate rank reference data exists for FK-backed gate inserts.
+        expected_profiles = [
+            GateRankProfile(
+                rank=GateRank.E,
+                stability_init=100.0,
+                volatility=0.05,
+                yield_min_micro=1_000,
+                yield_max_micro=5_000,
+                total_shares=100,
+                lifespan_min=200,
+                lifespan_max=400,
+                collapse_threshold=20.0,
+                discovery_cost_micro=100_000,
+                spawn_weight=40,
+            ),
+            GateRankProfile(
+                rank=GateRank.D,
+                stability_init=95.0,
+                volatility=0.08,
+                yield_min_micro=3_000,
+                yield_max_micro=10_000,
+                total_shares=80,
+                lifespan_min=180,
+                lifespan_max=360,
+                collapse_threshold=22.0,
+                discovery_cost_micro=250_000,
+                spawn_weight=25,
+            ),
+            GateRankProfile(
+                rank=GateRank.C,
+                stability_init=90.0,
+                volatility=0.12,
+                yield_min_micro=8_000,
+                yield_max_micro=25_000,
+                total_shares=60,
+                lifespan_min=150,
+                lifespan_max=300,
+                collapse_threshold=25.0,
+                discovery_cost_micro=500_000,
+                spawn_weight=18,
+            ),
+            GateRankProfile(
+                rank=GateRank.B,
+                stability_init=85.0,
+                volatility=0.15,
+                yield_min_micro=20_000,
+                yield_max_micro=60_000,
+                total_shares=50,
+                lifespan_min=120,
+                lifespan_max=250,
+                collapse_threshold=28.0,
+                discovery_cost_micro=1_000_000,
+                spawn_weight=10,
+            ),
+            GateRankProfile(
+                rank=GateRank.A,
+                stability_init=80.0,
+                volatility=0.20,
+                yield_min_micro=50_000,
+                yield_max_micro=150_000,
+                total_shares=40,
+                lifespan_min=100,
+                lifespan_max=200,
+                collapse_threshold=30.0,
+                discovery_cost_micro=2_500_000,
+                spawn_weight=5,
+            ),
+            GateRankProfile(
+                rank=GateRank.S,
+                stability_init=75.0,
+                volatility=0.25,
+                yield_min_micro=120_000,
+                yield_max_micro=400_000,
+                total_shares=30,
+                lifespan_min=80,
+                lifespan_max=160,
+                collapse_threshold=35.0,
+                discovery_cost_micro=5_000_000,
+                spawn_weight=2,
+            ),
+            GateRankProfile(
+                rank=GateRank.S_PLUS,
+                stability_init=70.0,
+                volatility=0.30,
+                yield_min_micro=300_000,
+                yield_max_micro=1_000_000,
+                total_shares=20,
+                lifespan_min=60,
+                lifespan_max=120,
+                collapse_threshold=40.0,
+                discovery_cost_micro=10_000_000,
+                spawn_weight=1,
+            ),
+        ]
+        result = await session.execute(select(GateRankProfile.rank))
+        existing_ranks = {row[0] for row in result.all()}
+        for profile in expected_profiles:
+            if profile.rank not in existing_ranks:
+                session.add(profile)
         await session.commit()
 
 

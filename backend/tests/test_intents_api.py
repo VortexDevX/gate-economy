@@ -107,3 +107,29 @@ async def test_submit_intent_missing_payload_rejected(client):
         headers=headers,
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_list_my_intents_returns_recent(client):
+    headers = await _register_and_login(client)
+
+    await client.post(
+        "/intents",
+        json={"intent_type": "DISCOVER_GATE", "payload": {"min_rank": "E"}},
+        headers=headers,
+    )
+    await client.post(
+        "/intents",
+        json={"intent_type": "PLACE_ORDER", "payload": {}},
+        headers=headers,
+    )
+
+    resp = await client.get("/intents/me", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] >= 2
+    assert len(body["items"]) >= 2
+    assert body["items"][0]["intent_type"] in (
+        "DISCOVER_GATE",
+        "PLACE_ORDER",
+    )

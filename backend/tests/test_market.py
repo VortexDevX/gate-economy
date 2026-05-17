@@ -16,12 +16,15 @@ from app.models.gate import (
     GateShare,
     GateStatus,
 )
+from app.models.guild import DividendPolicy, Guild, GuildStatus
 from app.models.intent import Intent, IntentStatus, IntentType
-from app.models.market import Order, OrderSide, OrderStatus, Trade
+from app.models.ledger import AccountEntityType, EntryType
+from app.models.market import AssetType, Order, OrderSide, OrderStatus, Trade
 from app.models.player import Player
 from app.models.treasury import AccountType, SystemAccount
 from app.services.fee_calculator import calculate_escrow, calculate_fee
-from app.services.order_matching import calculate_iso_price
+from app.services.order_matching import calculate_iso_price, cancel_collapsed_gate_orders
+from app.services.transfer import transfer
 from app.simulation.tick import execute_tick
 
 
@@ -417,6 +420,87 @@ async def test_collapsed_gate_orders_cancelled(
         assert r.scalar_one().status == OrderStatus.CANCELLED
 
 
+@pytest.mark.asyncio
+async def test_dissolved_guild_buy_order_refunds_guild_escrow(
+    session_factory, pause_simulation, funded_player_id,
+):
+    """Escrow release on dissolved guild-share BUY order must refund guild account."""
+    t_id = await _treasury_id(session_factory)
+
+    async with session_factory() as s:
+        guild = Guild(
+            name="refund_guild",
+            founder_id=funded_player_id,
+            treasury_micro=0,
+            total_shares=1000,
+            public_float_pct=0.2,
+            dividend_policy=DividendPolicy.MANUAL,
+            status=GuildStatus.DISSOLVED,
+            created_at_tick=1,
+            maintenance_cost_micro=1_000,
+        )
+        s.add(guild)
+        await s.flush()
+
+        await transfer(
+            session=s,
+            from_type=AccountEntityType.SYSTEM,
+            from_id=t_id,
+            to_type=AccountEntityType.GUILD,
+            to_id=guild.id,
+            amount=200_000,
+            entry_type=EntryType.ADMIN_ADJUSTMENT,
+            tick_id=1,
+            memo="seed guild treasury for refund test",
+        )
+
+        await transfer(
+            session=s,
+            from_type=AccountEntityType.GUILD,
+            from_id=guild.id,
+            to_type=AccountEntityType.SYSTEM,
+            to_id=t_id,
+            amount=50_000,
+            entry_type=EntryType.ESCROW_LOCK,
+            tick_id=1,
+            memo="simulate guild escrow lock",
+        )
+
+        s.add(
+            Order(
+                player_id=guild.id,
+                guild_id=guild.id,
+                asset_type=AssetType.GUILD_SHARE,
+                asset_id=guild.id,
+                side=OrderSide.BUY,
+                quantity=5,
+                price_limit_micro=10_000,
+                escrow_micro=50_000,
+                status=OrderStatus.OPEN,
+                created_at_tick=1,
+            )
+        )
+        await s.commit()
+        guild_id = guild.id
+
+    async with session_factory() as s:
+        await cancel_collapsed_gate_orders(
+            session=s,
+            tick_number=2,
+            tick_id=2,
+            treasury_id=t_id,
+        )
+        await s.commit()
+
+    async with session_factory() as s:
+        r = await s.execute(select(Guild.treasury_micro).where(Guild.id == guild_id))
+        assert r.scalar_one() == 200_000
+        r = await s.execute(select(Order).where(Order.guild_id == guild_id))
+        order = r.scalar_one()
+        assert order.status == OrderStatus.CANCELLED
+        assert order.escrow_micro == 0
+
+
 # ── ISO ──
 
 
@@ -485,3 +569,37 @@ async def test_conservation_after_trading(
         )
         players = r.scalar_one()
         assert treasury + players == settings.initial_seed_micro
+
+
+@pytest.mark.asyncio
+async def test_conservation_after_iso_trade(
+    session_factory, pause_simulation, funded_player_id,
+):
+    """Conservation holds across OFFERING gate ISO creation and settlement."""
+    t_id = await _treasury_id(session_factory)
+    qty = 10
+    gid = await _offering_gate(session_factory, t_id, qty=qty)
+
+    async with session_factory() as s:
+        r = await s.execute(
+            select(GateRankProfile).where(GateRankProfile.rank == GateRank.E)
+        )
+        profile = r.scalar_one()
+    iso_price = calculate_iso_price(profile)
+
+    await _queue(session_factory, funded_player_id, _pay(gid, "BUY", qty, iso_price))
+    await execute_tick(session_factory)
+
+    async with session_factory() as s:
+        r = await s.execute(
+            select(SystemAccount.balance_micro).where(
+                SystemAccount.account_type == AccountType.TREASURY
+            )
+        )
+        treasury = int(r.scalar_one())
+        r = await s.execute(select(func.coalesce(func.sum(Player.balance_micro), 0)))
+        players = int(r.scalar_one())
+        r = await s.execute(select(func.coalesce(func.sum(Guild.treasury_micro), 0)))
+        guilds = int(r.scalar_one())
+
+    assert treasury + players + guilds == settings.initial_seed_micro

@@ -1,9 +1,14 @@
+import uuid
+
 import pytest
 import pytest_asyncio
+from datetime import UTC, datetime
 from sqlalchemy import select
 
 from app.config import settings
+from app.models.market import AssetType, Trade
 from app.models.player import Player, PlayerRole
+from app.models.tick import Tick
 from app.services.admin import PAUSE_KEY
 
 
@@ -307,3 +312,54 @@ async def test_metrics_endpoint(client):
     assert "dge_ws_connections" in body
     assert "dge_order_book_depth" in body
     assert "dge_events_fired_total" in body
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint_handles_trade_volume_aggregates(client, session_factory):
+    """Regression: /metrics must not fail when SQL SUM returns non-zero volume."""
+    async with session_factory() as session:
+        tick = Tick(tick_number=1, seed=1, started_at=datetime.now(UTC))
+        session.add(tick)
+        await session.flush()
+        session.add(
+            Trade(
+                buy_order_id=uuid.uuid4(),
+                sell_order_id=uuid.uuid4(),
+                asset_type=AssetType.GATE_SHARE,
+                asset_id=uuid.uuid4(),
+                quantity=10,
+                price_micro=200_000,
+                buyer_fee_micro=1_000,
+                seller_fee_micro=1_000,
+                tick_id=tick.id,
+            )
+        )
+        await session.commit()
+
+    first = await client.get("/metrics")
+    assert first.status_code == 200
+    assert "TypeError" not in first.text
+
+    async with session_factory() as session:
+        tick = Tick(tick_number=2, seed=2, started_at=datetime.now(UTC))
+        session.add(tick)
+        await session.flush()
+        session.add(
+            Trade(
+                buy_order_id=uuid.uuid4(),
+                sell_order_id=uuid.uuid4(),
+                asset_type=AssetType.GATE_SHARE,
+                asset_id=uuid.uuid4(),
+                quantity=5,
+                price_micro=150_000,
+                buyer_fee_micro=500,
+                seller_fee_micro=500,
+                tick_id=tick.id,
+            )
+        )
+        await session.commit()
+
+    second = await client.get("/metrics")
+    assert second.status_code == 200
+    assert "TypeError" not in second.text
+    assert "dge_trade_volume_micro" in second.text
