@@ -15,8 +15,8 @@ from app.schemas.leaderboard import (
     LeaderboardEntry,
     LeaderboardResponse,
     MyRankResponse,
-    SeasonResultResponse,
     SeasonResponse,
+    SeasonResultResponse,
 )
 
 router = APIRouter(tags=["leaderboard"])

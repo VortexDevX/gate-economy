@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from redis.asyncio import Redis
 
 # Lua script: delete key only if value matches (atomic compare-and-delete)
@@ -9,8 +11,16 @@ else
 end
 """
 
+_REFRESH_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("expire", KEYS[1], ARGV[2])
+else
+    return 0
+end
+"""
+
 LOCK_KEY = "sim:leader"
-LOCK_TTL_SECONDS = 4
+LOCK_TTL_SECONDS = 30
 
 
 class SimulationLock:
@@ -47,10 +57,21 @@ class SimulationLock:
         Returns True if released, False if lock was already gone
         or held by another worker (e.g., after TTL expiry).
         """
-        result = await self._redis.eval(
+        result = cast(Any, await self._redis.eval(
             _RELEASE_SCRIPT,
             1,
-            self._lock_key, # type: ignore
-            self._worker_id, # type: ignore
-        )
-        return result == 1
+            self._lock_key,  # type: ignore
+            self._worker_id,  # type: ignore
+        ))
+        return bool(result == 1)
+
+    async def refresh(self) -> bool:
+        """Extend the lock TTL only if this worker still owns it."""
+        result = cast(Any, await self._redis.eval(
+            _REFRESH_SCRIPT,
+            1,
+            self._lock_key,  # type: ignore
+            self._worker_id,  # type: ignore
+            LOCK_TTL_SECONDS,
+        ))
+        return bool(result == 1)

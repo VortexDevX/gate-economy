@@ -15,18 +15,21 @@ from sqlalchemy.pool import NullPool
 from app.config import settings
 from app.core.deps import get_db
 from app.main import app
+from app.models.admin import SimulationParameter
+from app.models.event import Event
 from app.models.gate import Gate, GateRank, GateRankProfile, GateShare
+from app.models.guild import Guild, GuildGateHolding, GuildMember, GuildShare
 from app.models.intent import Intent
+from app.models.leaderboard import PlayerNetWorth, Season, SeasonResult
 from app.models.ledger import LedgerEntry
+from app.models.market import MarketPrice, Order, Trade
+from app.models.news import News
 from app.models.player import Player
 from app.models.tick import Tick
 from app.models.treasury import AccountType, SystemAccount
-from app.models.market import MarketPrice, Order, Trade
-from app.models.guild import Guild, GuildGateHolding, GuildMember, GuildShare
-from app.models.event import Event
-from app.models.news import News
-from app.models.leaderboard import PlayerNetWorth, Season, SeasonResult
-from app.models.admin import SimulationParameter
+
+if os.getenv("TEST_DATABASE_URL"):
+    settings.database_url = os.environ["TEST_DATABASE_URL"]
 
 
 def _assert_safe_test_database() -> None:
@@ -326,7 +329,7 @@ async def test_player_id(session_factory) -> uuid.UUID:
         session.add(player)
         await session.commit()
         return player_id
-    
+
 @pytest_asyncio.fixture
 async def funded_player_id(session_factory) -> uuid.UUID:
     """Create a player with starting balance, properly debited from treasury.

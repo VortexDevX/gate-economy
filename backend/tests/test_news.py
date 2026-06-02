@@ -1,14 +1,13 @@
 """Tests for news generation and the news API."""
 
 import uuid
-
-import pytest
 from datetime import UTC, datetime
 
-from app.config import settings
+import pytest
+
 from app.models.event import Event, EventType
-from app.models.gate import Gate, GateRank, GateStatus, DiscoveryType
-from app.models.market import Trade, AssetType
+from app.models.gate import DiscoveryType, Gate, GateRank, GateStatus
+from app.models.market import AssetType, Trade
 from app.models.news import News, NewsCategory
 from app.models.tick import Tick
 from app.services.news_generator import generate_tick_news

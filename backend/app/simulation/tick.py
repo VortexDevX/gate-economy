@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from uuid import UUID
 
 import structlog
 from sqlalchemy import select
@@ -8,7 +9,9 @@ from app.config import settings
 from app.models.intent import Intent, IntentStatus, IntentType
 from app.models.tick import Tick
 from app.models.treasury import AccountType, SystemAccount
+from app.services.admin import run_conservation_audit
 from app.services.ai_traders import run_ai_traders
+from app.services.anti_exploit import run_anti_exploit_maintenance
 from app.services.event_engine import roll_events
 from app.services.gate_lifecycle import (
     advance_gate_lifecycle,
@@ -23,8 +26,8 @@ from app.services.guild_manager import (
     process_guild_dividend,
     process_guild_invest,
 )
-from app.services.news_generator import generate_tick_news
 from app.services.leaderboard import check_season, update_leaderboard
+from app.services.news_generator import generate_tick_news
 from app.services.order_matching import (
     cancel_collapsed_gate_orders,
     create_iso_orders,
@@ -35,8 +38,6 @@ from app.services.order_matching import (
     update_market_prices,
 )
 from app.services.realtime import publish_tick_update
-from app.services.anti_exploit import run_anti_exploit_maintenance
-from app.services.admin import run_conservation_audit
 from app.simulation.rng import TickRNG, derive_seed
 from app.simulation.state_hash import compute_state_hash
 
@@ -56,7 +57,7 @@ async def _process_intents(
     tick_id: int,
     rng: TickRNG,
     intents: list[Intent],
-    treasury_id: "uuid.UUID",  # type: ignore
+    treasury_id: UUID,
 ) -> None:
     """Route intents to their respective processors."""
     for intent in intents:
@@ -119,7 +120,7 @@ async def _advance_gates(
     tick_number: int,
     tick_id: int,
     rng: TickRNG,
-    treasury_id: "uuid.UUID",  # type: ignore
+    treasury_id: UUID,
 ) -> None:
     """System spawn + lifecycle + yield distribution."""
     await system_spawn_gate(session, tick_number, tick_id, rng, treasury_id)
@@ -134,7 +135,7 @@ async def _guild_lifecycle(
     session: AsyncSession,
     tick_number: int,
     tick_id: int,
-    treasury_id: "uuid.UUID",  # type: ignore
+    treasury_id: UUID,
 ) -> None:
     """Per-tick guild maintenance, insolvency, and auto-dividends."""
     await guild_maintenance(session, tick_number, tick_id, treasury_id)
@@ -255,7 +256,7 @@ async def execute_tick(session_factory: async_sessionmaker) -> Tick:
 
         # 14. Anti-exploit maintenance (Phase 9+)
         await run_anti_exploit_maintenance(session, tick_number, tick.id, treasury_id)
-    
+
         # 14b. Leaderboard & season updates
         await check_season(session, tick_number, tick.id)
         if tick_number % settings.net_worth_update_interval == 0:

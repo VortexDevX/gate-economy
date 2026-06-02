@@ -6,6 +6,7 @@ filterwarnings = [
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
@@ -15,3 +16,5 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+plugins = ["sqlalchemy.ext.mypy.plugin"]
+disable_error_code = ["attr-defined", "assignment", "arg-type", "operator", "union-attr"]

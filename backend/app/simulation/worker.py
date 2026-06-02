@@ -12,9 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.config import settings
+from app.services.admin import PAUSE_KEY
 from app.simulation.lock import SimulationLock
 from app.simulation.tick import InvariantViolationError, execute_tick
-from app.services.admin import PAUSE_KEY
 
 # ── Celery app ──
 
@@ -105,12 +105,23 @@ async def _run_tick_async():
 
     lock = SimulationLock(redis, _worker_id)
     acquired = False
+    heartbeat_task = None
+
+    async def _refresh_lock_until_done():
+        while True:
+            await asyncio.sleep(max(1, settings.simulation_tick_interval))
+            refreshed = await lock.refresh()
+            if not refreshed:
+                logger.warning("lock_refresh_failed", worker_id=_worker_id)
+                return
 
     try:
         acquired = await lock.acquire()
         if not acquired:
             logger.debug("tick_skipped_lock_held", worker_id=_worker_id)
             return
+
+        heartbeat_task = asyncio.create_task(_refresh_lock_until_done())
 
         factory, engine = _make_session_factory()
         try:
@@ -126,6 +137,12 @@ async def _run_tick_async():
     except Exception:
         logger.exception("tick_error", worker_id=_worker_id)
     finally:
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
         if acquired:
             try:
                 await lock.release()

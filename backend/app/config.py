@@ -1,3 +1,6 @@
+import secrets
+
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -9,7 +12,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
 
     # ── Auth ──
-    jwt_secret: str = "change-me-in-production"
+    jwt_secret: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
     jwt_algorithm: str = "HS256"
     jwt_access_expire_minutes: int = 15
     jwt_refresh_expire_days: int = 7
@@ -33,7 +36,7 @@ class Settings(BaseSettings):
     fee_scale_micro: int = 10_000_000        # denominator for progressive scaling (10 currency)
     max_fee_rate: float = 0.10               # 10% hard cap on fee rate
     iso_payback_ticks: int = 100             # ticks of yield used to price ISO shares
-    
+
     # ── Guild Settings ──
     guild_creation_cost_micro: int = 50_000_000       # 50 currency
     guild_total_shares: int = 1000
@@ -54,7 +57,7 @@ class Settings(BaseSettings):
     ai_vi_sell_premium: float = 0.30                     # sell when price > fair*(1+this)
     ai_noise_activity: float = 0.40                      # probability NT acts per tick
     ai_noise_max_qty: int = 3                            # max shares per noise trade
-    
+
     # ── Event Settings ──
     event_probability: float = 0.10
     event_stability_surge_min: float = 5.0
@@ -84,7 +87,7 @@ class Settings(BaseSettings):
     leaderboard_decay_inactive_ticks: int = 100           # grace period before decay
     leaderboard_decay_floor: float = 0.50                 # min decay multiplier (50%)
     season_duration_ticks: int = 17280                    # ~1 day at 5s/tick
-    
+
     # ── Celery ──
     celery_broker_url: str = "redis://redis:6379/0"
 

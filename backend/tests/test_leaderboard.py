@@ -3,14 +3,12 @@
 import uuid
 
 import pytest
-import pytest_asyncio
-from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.gate import Gate, GateRank, GateShare, GateStatus
-from app.models.guild import Guild, GuildShare, GuildStatus, DividendPolicy
+from app.models.guild import DividendPolicy, Guild, GuildShare, GuildStatus
 from app.models.leaderboard import (
     PlayerNetWorth,
     Season,
@@ -26,7 +24,6 @@ from app.services.leaderboard import (
     check_season,
     update_leaderboard,
 )
-
 
 # ── Helpers ──
 
@@ -248,7 +245,7 @@ async def test_season_results_recorded(db, funded_player_id):
     await check_season(db, 1, tick1.id)
     await db.flush()
 
-    player2 = await _create_funded_player(db, balance=5_000_000)
+    await _create_funded_player(db, balance=5_000_000)
 
     end_tick = 1 + settings.season_duration_ticks
     tick2 = await _make_tick(db, end_tick)

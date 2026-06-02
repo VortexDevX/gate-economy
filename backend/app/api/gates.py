@@ -5,7 +5,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 
-from app.core.deps import DBSession # type: ignore
+from app.core.deps import DBSession  # type: ignore
 from app.models.gate import Gate, GateRankProfile, GateShare, GateStatus
 from app.schemas.gate import (
     GateDetailResponse,

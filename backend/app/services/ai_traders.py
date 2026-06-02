@@ -66,6 +66,7 @@ async def _cancel_ai_orders(
             order.escrow_micro = 0
         order.status = OrderStatus.CANCELLED
         order.updated_at_tick = tick_number
+    await session.flush()
 
 
 async def _get_available_shares(

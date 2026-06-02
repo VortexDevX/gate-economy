@@ -7,8 +7,15 @@ import pytest
 from sqlalchemy import and_, func, select
 
 from app.config import settings
-from app.models.gate import DiscoveryType, Gate, GateRank, GateShare, GateStatus
-from app.models.guild import Guild, GuildGateHolding, GuildMember, GuildRole, GuildShare, GuildStatus
+from app.models.gate import DiscoveryType, Gate, GateRank, GateRankProfile, GateShare, GateStatus
+from app.models.guild import (
+    Guild,
+    GuildGateHolding,
+    GuildMember,
+    GuildRole,
+    GuildShare,
+    GuildStatus,
+)
 from app.models.intent import Intent, IntentStatus, IntentType
 from app.models.ledger import AccountEntityType, EntryType
 from app.models.market import AssetType, Order, OrderSide, OrderStatus
@@ -17,7 +24,6 @@ from app.models.treasury import AccountType, SystemAccount
 from app.services.order_matching import calculate_iso_price
 from app.services.transfer import transfer
 from app.simulation.tick import execute_tick
-from app.models.gate import GateRankProfile
 
 
 @pytest.fixture(autouse=True)
@@ -95,7 +101,9 @@ async def _balance(sf, player_id: uuid.UUID) -> int:
         return result.scalar_one()
 
 
-async def _queue_intent(sf, player_id: uuid.UUID, intent_type: IntentType, payload: dict) -> uuid.UUID:
+async def _queue_intent(
+    sf, player_id: uuid.UUID, intent_type: IntentType, payload: dict
+) -> uuid.UUID:
     async with sf() as session:
         intent = Intent(
             player_id=player_id,
@@ -114,7 +122,9 @@ async def _get_intent(sf, intent_id: uuid.UUID) -> Intent:
         return result.scalar_one()
 
 
-async def _create_active_gate(sf, total_shares: int = 100, base_yield_micro: int = 10_000) -> uuid.UUID:
+async def _create_active_gate(
+    sf, total_shares: int = 100, base_yield_micro: int = 10_000
+) -> uuid.UUID:
     async with sf() as session:
         gate = Gate(
             rank=GateRank.E,
@@ -198,7 +208,10 @@ async def test_create_guild_success_deducts_fee_and_sets_shares(session_factory,
 
     assert founder_qty == 700
     assert float_qty == 300
-    assert await _balance(session_factory, founder_id) == before - settings.guild_creation_cost_micro
+    assert (
+        await _balance(session_factory, founder_id)
+        == before - settings.guild_creation_cost_micro
+    )
 
 
 @pytest.mark.asyncio
@@ -268,7 +281,10 @@ async def test_guild_iso_order_created(session_factory, pause_simulation):
         )
         order = result.scalar_one()
         assert order.quantity == 300
-        assert order.price_limit_micro == settings.guild_creation_cost_micro // settings.guild_total_shares
+        assert (
+            order.price_limit_micro
+            == settings.guild_creation_cost_micro // settings.guild_total_shares
+        )
 
 
 @pytest.mark.asyncio
@@ -437,7 +453,9 @@ async def test_guild_invest_matches_gate_iso_and_receives_holdings(
 async def test_guild_receives_yield_from_gate_holdings(session_factory, pause_simulation):
     with _settings(guild_base_maintenance_micro=1, guild_maintenance_scale=0.0):
         founder_id = await _create_player_with_balance(session_factory, 120_000_000)
-        gate_id = await _create_active_gate(session_factory, total_shares=100, base_yield_micro=10_000)
+        gate_id = await _create_active_gate(
+            session_factory, total_shares=100, base_yield_micro=10_000
+        )
 
         await _queue_intent(
             session_factory,
@@ -466,7 +484,9 @@ async def test_guild_receives_yield_from_gate_holdings(session_factory, pause_si
 async def test_insolvent_guild_gets_yield_penalty(session_factory, pause_simulation):
     with _settings(guild_base_maintenance_micro=1, guild_maintenance_scale=0.0):
         founder_id = await _create_player_with_balance(session_factory, 120_000_000)
-        gate_id = await _create_active_gate(session_factory, total_shares=100, base_yield_micro=10_000)
+        gate_id = await _create_active_gate(
+            session_factory, total_shares=100, base_yield_micro=10_000
+        )
 
         await _queue_intent(
             session_factory,
@@ -487,7 +507,9 @@ async def test_insolvent_guild_gets_yield_penalty(session_factory, pause_simulat
 
         await execute_tick(session_factory)
         async with session_factory() as session:
-            result = await session.execute(select(Guild.treasury_micro, Guild.status).where(Guild.id == guild_id))
+            result = await session.execute(
+                select(Guild.treasury_micro, Guild.status).where(Guild.id == guild_id)
+            )
             treasury_micro, status = result.one()
             # Gate already decayed once on tick 1 before holdings existed.
             # Tick 2 payout base is 9_980, insolvent gets 50% => 4_990, then maintenance 1.

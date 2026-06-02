@@ -25,6 +25,7 @@ from app.models.market import (
     Trade,
 )
 from app.models.player import Player
+from app.models.tick import Tick
 from app.services.fee_calculator import calculate_escrow, calculate_fee
 from app.services.transfer import transfer
 
@@ -309,7 +310,7 @@ async def process_place_order(
         intent.status = IntentStatus.REJECTED
         intent.reject_reason = f"Quantity {quantity} exceeds total shares {total}"
         return
-    
+
     if side == OrderSide.BUY:
         escrow_total, _ = calculate_escrow(quantity, price_limit)
         result = await session.execute(
@@ -726,15 +727,20 @@ async def update_market_prices(
         )
         best_ask = r.scalar_one_or_none()
 
+        tick_window = max(1, 86_400 // max(1, settings.simulation_tick_interval))
+        earliest_tick = max(0, tick_number - tick_window + 1)
         r = await session.execute(
             select(func.coalesce(
                 func.sum(Trade.quantity * Trade.price_micro), 0
-            )).where(and_(
-                Trade.asset_type == asset_type, Trade.asset_id == asset_id,
-                Trade.tick_id == tick_id,
+            ))
+            .join(Tick, Trade.tick_id == Tick.id)
+            .where(and_(
+                Trade.asset_type == asset_type,
+                Trade.asset_id == asset_id,
+                Tick.tick_number >= earliest_tick,
             ))
         )
-        tick_vol = r.scalar_one()
+        volume_24h = r.scalar_one()
 
         r = await session.execute(
             select(MarketPrice).where(and_(
@@ -748,12 +754,12 @@ async def update_market_prices(
                 asset_type=asset_type, asset_id=asset_id,
                 last_price_micro=last_price,
                 best_bid_micro=best_bid, best_ask_micro=best_ask,
-                volume_24h_micro=tick_vol, updated_at_tick=tick_number,
+                volume_24h_micro=volume_24h, updated_at_tick=tick_number,
             ))
         else:
             if last_price is not None:
                 mp.last_price_micro = last_price
             mp.best_bid_micro = best_bid
             mp.best_ask_micro = best_ask
-            mp.volume_24h_micro += tick_vol
+            mp.volume_24h_micro = volume_24h
             mp.updated_at_tick = tick_number

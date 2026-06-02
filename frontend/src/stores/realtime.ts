@@ -53,8 +53,8 @@ export const useRealtimeStore = create<RealtimeState>((set) => ({
     set({ connectionState: reconnectAttempts > 0 ? "reconnecting" : "connecting" });
 
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-    const url = `${scheme}://${window.location.host}/ws/feed?token=${encodeURIComponent(token)}`;
-    socket = new WebSocket(url);
+    const url = `${scheme}://${window.location.host}/ws/feed`;
+    socket = new WebSocket(url, ["dge.auth", token]);
 
     socket.onopen = () => {
       reconnectAttempts = 0;

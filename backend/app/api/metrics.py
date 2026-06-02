@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
-    Counter,
     CollectorRegistry,
+    Counter,
     Gauge,
     Histogram,
     generate_latest,
@@ -11,6 +11,7 @@ from prometheus_client import (
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.ws import get_active_ws_connections
 from app.core.deps import get_db
 from app.models.event import Event
 from app.models.gate import Gate, GateStatus
@@ -19,7 +20,6 @@ from app.models.market import Order, OrderStatus, Trade
 from app.models.player import Player
 from app.models.tick import Tick
 from app.models.treasury import AccountType, SystemAccount
-from app.api.ws import get_active_ws_connections
 
 router = APIRouter(tags=["metrics"])
 

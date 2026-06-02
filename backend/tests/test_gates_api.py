@@ -14,6 +14,7 @@ async def seeded_gate(session_factory) -> uuid.UUID:
     """Create a test gate directly in DB and return its ID."""
     async with session_factory() as session:
         from sqlalchemy import select
+
         from app.models.treasury import AccountType, SystemAccount
 
         result = await session.execute(

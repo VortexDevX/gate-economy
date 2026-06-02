@@ -42,6 +42,7 @@ export default function AdminPage() {
   const [paramDrafts, setParamDrafts] = useState<Record<string, string>>({});
 
   const paramRows = useMemo(() => parameters ?? [], [parameters]);
+  const adminActionPending = pause.isPending || resume.isPending || manageSeason.isPending;
 
   const statusLabel = sim?.is_paused
     ? "Paused"
@@ -91,27 +92,29 @@ export default function AdminPage() {
           <div className="flex gap-3">
             <button
               onClick={() => pause.mutate()}
-              disabled={pause.isPending}
-              className="bg-amber-600 hover:bg-amber-500 text-white text-sm px-4 py-2 rounded"
+              disabled={adminActionPending}
+              className="bg-amber-600 hover:bg-amber-500 text-white text-sm px-4 py-2 rounded disabled:opacity-50"
             >
-              Pause
+              {pause.isPending ? "Pausing..." : "Pause"}
             </button>
             <button
               onClick={() => resume.mutate()}
-              disabled={resume.isPending}
-              className="bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2 rounded"
+              disabled={adminActionPending}
+              className="bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2 rounded disabled:opacity-50"
             >
-              Resume
+              {resume.isPending ? "Resuming..." : "Resume"}
             </button>
             <button
               onClick={() => manageSeason.mutate({ action: "create" })}
-              className="bg-gray-900 text-sm px-4 py-2 rounded border border-gray-700"
+              disabled={adminActionPending}
+              className="bg-gray-900 text-sm px-4 py-2 rounded border border-gray-700 disabled:opacity-50"
             >
               Create Season
             </button>
             <button
               onClick={() => manageSeason.mutate({ action: "end" })}
-              className="bg-gray-900 text-sm px-4 py-2 rounded border border-gray-700"
+              disabled={adminActionPending}
+              className="bg-gray-900 text-sm px-4 py-2 rounded border border-gray-700 disabled:opacity-50"
             >
               End Season
             </button>
@@ -138,11 +141,12 @@ export default function AdminPage() {
             <button
               onClick={() => triggerEvent.mutate(eventType)}
               disabled={triggerEvent.isPending}
-              className="bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2 rounded"
+              className="bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2 rounded disabled:opacity-50"
             >
-              Trigger
+              {triggerEvent.isPending ? "Triggering..." : "Trigger"}
             </button>
           </div>
+          {triggerEvent.error && <ErrorAlert message="Event trigger failed." />}
           {triggerEvent.isSuccess && (
             <div className="nm-soft-note">
               Event queued: {triggerEvent.data?.event_type}
@@ -155,6 +159,9 @@ export default function AdminPage() {
         <h2 className="nm-panel-title mb-3">Parameters</h2>
         {paramsLoading && <LoadingSpinner />}
         {paramsError && <ErrorAlert message="Failed to load parameters." />}
+        {patchParam.error && (
+          <ErrorAlert message="Parameter update failed. Check the value and bounds." />
+        )}
         {!paramsLoading && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -190,9 +197,10 @@ export default function AdminPage() {
                         />
                         <button
                           type="submit"
-                          className="text-xs px-2 py-1 rounded bg-brand-600 text-white"
+                          disabled={patchParam.isPending}
+                          className="text-xs px-2 py-1 rounded bg-brand-600 text-white disabled:opacity-50"
                         >
-                          Save
+                          {patchParam.isPending ? "Saving..." : "Save"}
                         </button>
                       </form>
                     </td>

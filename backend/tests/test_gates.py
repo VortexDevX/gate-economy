@@ -21,7 +21,6 @@ from app.services.transfer import transfer
 from app.simulation.rng import TickRNG
 from app.simulation.tick import execute_tick
 
-
 # ── Helpers ──
 
 
@@ -375,7 +374,6 @@ async def test_yield_paid_to_shareholders(session_factory):
         session.add(GateShare(gate_id=gate.id, player_id=treasury_id, quantity=50))
         await session.commit()
 
-        gate_id = gate.id
         player_id = player.id
 
     async with session_factory() as session:
@@ -400,7 +398,6 @@ async def test_yield_paid_to_shareholders(session_factory):
 async def test_no_yield_for_collapsed_gate(session_factory):
     """Collapsed gates generate no yield."""
     async with session_factory() as session:
-        treasury_id = await _get_treasury_id(session)
         player = await _create_funded_player(session, balance=0)
 
         gate = Gate(
@@ -479,7 +476,6 @@ async def test_no_yield_when_treasury_empty(session_factory):
     """Yield distribution gracefully handles empty treasury."""
     async with session_factory() as session:
         treasury = await _get_treasury(session)
-        treasury_id = treasury.id
         drain_amount = treasury.balance_micro
 
         drainer = await _create_funded_player(session, balance=drain_amount)

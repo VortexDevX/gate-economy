@@ -21,10 +21,9 @@ def get_active_ws_connections() -> int:
     return _active_ws_connections
 
 
-@router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket) -> None:
+async def _stream_realtime(websocket: WebSocket) -> None:
     global _active_ws_connections
-    await websocket.accept()
+    await websocket.accept(subprotocol="dge.auth")
     _active_ws_connections += 1
     r = Redis.from_url(settings.redis_url, decode_responses=True)
     pubsub = r.pubsub()
@@ -44,8 +43,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
 @router.websocket("/ws/feed")
 async def websocket_feed_endpoint(websocket: WebSocket) -> None:
-    """Authenticated websocket endpoint using ?token=<access_jwt>."""
-    token = websocket.query_params.get("token")
+    """Authenticated websocket endpoint using token subprotocol."""
+    protocols = websocket.headers.get("sec-websocket-protocol", "")
+    protocol_parts = [part.strip() for part in protocols.split(",")]
+    token = (
+        protocol_parts[1]
+        if len(protocol_parts) >= 2 and protocol_parts[0] == "dge.auth"
+        else None
+    )
     if not token:
         await websocket.close(code=1008, reason="Missing token")
         return
@@ -63,13 +68,19 @@ async def websocket_feed_endpoint(websocket: WebSocket) -> None:
         await websocket.close(code=1008, reason="Invalid or expired token")
         return
 
+    try:
+        player_id = uuid.UUID(sub)
+    except (TypeError, ValueError):
+        await websocket.close(code=1008, reason="Invalid token payload")
+        return
+
     factory = get_session_factory()
     async with factory() as session:
         result = await session.execute(
-            select(Player.id).where(Player.id == uuid.UUID(sub))
+            select(Player.id).where(Player.id == player_id)
         )
         if result.scalar_one_or_none() is None:
             await websocket.close(code=1008, reason="Player not found")
             return
 
-    await websocket_endpoint(websocket)
+    await _stream_realtime(websocket)

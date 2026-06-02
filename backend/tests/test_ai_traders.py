@@ -3,20 +3,19 @@
 import uuid
 
 import pytest
-import pytest_asyncio
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.models.gate import (
+    DiscoveryType,
     Gate,
     GateRank,
     GateRankProfile,
     GateShare,
     GateStatus,
-    DiscoveryType,
 )
-from app.models.ledger import AccountEntityType, EntryType, LedgerEntry
+from app.models.ledger import AccountEntityType, EntryType
 from app.models.market import (
     AssetType,
     MarketPrice,
@@ -28,10 +27,7 @@ from app.models.market import (
 from app.models.player import Player
 from app.models.treasury import AccountType, SystemAccount
 from app.services.ai_traders import (
-    _cancel_ai_orders,
     _get_reference_price,
-    _place_ai_buy,
-    _place_ai_sell,
     run_ai_traders,
     run_market_maker,
     run_noise_trader,
@@ -39,7 +35,6 @@ from app.services.ai_traders import (
 )
 from app.services.transfer import transfer
 from app.simulation.rng import TickRNG
-
 
 # ─── Helpers ─────────────────────────────────────────────
 
@@ -193,7 +188,9 @@ async def test_ai_seeding_creates_3_players(session_factory: async_sessionmaker)
     """AI seeding creates 3 is_ai=True players."""
     async with session_factory() as session:
         await _create_ai_player(session, "ai_market_maker", settings.ai_market_maker_budget_micro)
-        await _create_ai_player(session, "ai_value_investor", settings.ai_value_investor_budget_micro)
+        await _create_ai_player(
+            session, "ai_value_investor", settings.ai_value_investor_budget_micro
+        )
         await _create_ai_player(session, "ai_noise_trader", settings.ai_noise_trader_budget_micro)
         await session.commit()
 
@@ -211,11 +208,18 @@ async def test_ai_seeding_creates_3_players(session_factory: async_sessionmaker)
 async def test_ai_seeding_is_idempotent(session_factory: async_sessionmaker):
     """Creating AI players twice doesn't duplicate."""
     async with session_factory() as session:
-        treasury = await _get_treasury(session)
         # First round
         for username, email, budget in [
-            ("ai_market_maker", "ai_mm@system.internal", settings.ai_market_maker_budget_micro),
-            ("ai_value_investor", "ai_vi@system.internal", settings.ai_value_investor_budget_micro),
+            (
+                "ai_market_maker",
+                "ai_mm@system.internal",
+                settings.ai_market_maker_budget_micro,
+            ),
+            (
+                "ai_value_investor",
+                "ai_vi@system.internal",
+                settings.ai_value_investor_budget_micro,
+            ),
             ("ai_noise_trader", "ai_nt@system.internal", settings.ai_noise_trader_budget_micro),
         ]:
             await _create_ai_player(session, username, budget)
@@ -242,7 +246,9 @@ async def test_ai_seeding_funds_from_treasury(session_factory: async_sessionmake
     """AI budgets come from treasury — conservation holds."""
     async with session_factory() as session:
         await _create_ai_player(session, "ai_market_maker", settings.ai_market_maker_budget_micro)
-        await _create_ai_player(session, "ai_value_investor", settings.ai_value_investor_budget_micro)
+        await _create_ai_player(
+            session, "ai_value_investor", settings.ai_value_investor_budget_micro
+        )
         await _create_ai_player(session, "ai_noise_trader", settings.ai_noise_trader_budget_micro)
         await session.commit()
 
@@ -254,7 +260,7 @@ async def test_ai_seeding_funds_from_treasury(session_factory: async_sessionmake
         )
         mm = result.scalar_one()
         assert mm.balance_micro == settings.ai_market_maker_budget_micro
-        
+
 
 # ─── Helper Tests ────────────────────────────────────────
 
@@ -434,6 +440,8 @@ async def test_mm_cancels_old_orders(session_factory: async_sessionmaker, pause_
             old = result.scalar_one()
             assert old.status == OrderStatus.CANCELLED
 
+        await _check_conservation(session)
+
 
 @pytest.mark.asyncio
 async def test_mm_skips_gate_without_price(session_factory: async_sessionmaker):
@@ -442,7 +450,7 @@ async def test_mm_skips_gate_without_price(session_factory: async_sessionmaker):
         await _seed_rank_profiles(session)
         mm = await _create_ai_player(session, "ai_market_maker", 100_000_000)
         # Active gate, NO market price
-        gate = await _create_gate(session)
+        await _create_gate(session)
         treasury = await _get_treasury(session)
         rng = TickRNG(42)
 
@@ -621,9 +629,9 @@ async def test_ai_does_nothing_without_gates(session_factory: async_sessionmaker
     """No orders placed when there are no tradeable gates."""
     async with session_factory() as session:
         await _seed_rank_profiles(session)
-        mm = await _create_ai_player(session, "ai_market_maker", 100_000_000)
-        vi = await _create_ai_player(session, "ai_value_investor", 100_000_000)
-        nt = await _create_ai_player(session, "ai_noise_trader", 100_000_000)
+        await _create_ai_player(session, "ai_market_maker", 100_000_000)
+        await _create_ai_player(session, "ai_value_investor", 100_000_000)
+        await _create_ai_player(session, "ai_noise_trader", 100_000_000)
         treasury = await _get_treasury(session)
         rng = TickRNG(42)
 
@@ -679,7 +687,7 @@ async def test_conservation_after_ai_trading(session_factory: async_sessionmaker
             await session.commit()
 
         # Run a full tick (AI creates orders, matching runs)
-        tick = await execute_tick(session_factory)
+        await execute_tick(session_factory)
 
         async with session_factory() as session:
             await _check_conservation(session)

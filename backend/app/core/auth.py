@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 from uuid import UUID
 
 from argon2 import PasswordHasher
@@ -32,7 +33,7 @@ def create_access_token(player_id: UUID) -> str:
         "iat": now,
         "exp": now + timedelta(minutes=settings.jwt_access_expire_minutes),
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    return cast(str, jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm))
 
 
 def create_refresh_token(player_id: UUID) -> str:
@@ -44,10 +45,10 @@ def create_refresh_token(player_id: UUID) -> str:
         "iat": now,
         "exp": now + timedelta(days=settings.jwt_refresh_expire_days),
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    return cast(str, jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm))
 
 
-def decode_token(token: str) -> dict:
+def decode_token(token: str) -> dict[str, Any]:
     """Decode and verify a JWT. Raises JWTError on invalid/expired."""
     try:
         payload = jwt.decode(
@@ -55,6 +56,6 @@ def decode_token(token: str) -> dict:
             settings.jwt_secret,
             algorithms=[settings.jwt_algorithm],
         )
-        return payload
+        return cast(dict[str, Any], payload)
     except JWTError:
         raise

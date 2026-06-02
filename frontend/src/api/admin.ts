@@ -44,7 +44,7 @@ export async function patchAdminParameter(
   body: ParameterUpdateRequest,
 ): Promise<ParameterResponse> {
   const { data } = await client.patch<ParameterResponse>(
-    `/admin/parameters/${key}`,
+    `/admin/parameters/${encodeURIComponent(key)}`,
     body,
   );
   return data;

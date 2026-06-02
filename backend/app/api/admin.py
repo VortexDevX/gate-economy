@@ -1,9 +1,8 @@
-import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
-from redis.asyncio import Redis
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
+
+import structlog
+from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import func, select
 
 from app.core.admin import AdminPlayer
 from app.core.deps import DBSession
@@ -22,8 +21,8 @@ from app.schemas.admin import (
     SeasonActionRequest,
     SeasonActionResponse,
     SimulationControlResponse,
-    TreasuryResponse,
     TreasuryLedgerEntry,
+    TreasuryResponse,
 )
 from app.services.admin import (
     PAUSE_KEY,
@@ -44,6 +43,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 @router.post("/simulation/pause", response_model=SimulationControlResponse)
 async def pause_simulation(admin: AdminPlayer):
     from redis.asyncio import Redis as R
+
     from app.config import settings as s
     r = R.from_url(s.redis_url, decode_responses=True)
     try:
@@ -57,6 +57,7 @@ async def pause_simulation(admin: AdminPlayer):
 @router.post("/simulation/resume", response_model=SimulationControlResponse)
 async def resume_simulation(admin: AdminPlayer):
     from redis.asyncio import Redis as R
+
     from app.config import settings as s
     r = R.from_url(s.redis_url, decode_responses=True)
     try:

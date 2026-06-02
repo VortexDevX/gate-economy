@@ -1,23 +1,23 @@
 """Tests for the stochastic event engine."""
 
-import pytest
 from datetime import UTC, datetime
 
-from sqlalchemy import select, func
+import pytest
+from sqlalchemy import func, select
 
 from app.config import settings
 from app.models.event import Event, EventType
-from app.models.gate import Gate, GateRank, GateShare, GateStatus, DiscoveryType
+from app.models.gate import DiscoveryType, Gate, GateRank, GateShare, GateStatus
 from app.models.player import Player
 from app.models.tick import Tick
 from app.models.treasury import AccountType, SystemAccount
 from app.services.event_engine import (
-    roll_events,
-    _handle_stability_surge,
-    _handle_stability_crisis,
-    _handle_yield_boom,
-    _handle_market_shock,
     _handle_discovery_surge,
+    _handle_market_shock,
+    _handle_stability_crisis,
+    _handle_stability_surge,
+    _handle_yield_boom,
+    roll_events,
 )
 from app.simulation.rng import TickRNG
 

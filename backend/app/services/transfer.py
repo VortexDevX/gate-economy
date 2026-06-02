@@ -49,7 +49,7 @@ async def _load_and_lock(
         if account is None:
             raise ValueError(f"SystemAccount {account_id} not found")
         return account
-    
+
     if account_type == AccountEntityType.GUILD:
         from app.models.guild import Guild
 

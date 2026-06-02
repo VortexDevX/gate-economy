@@ -1,8 +1,8 @@
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
-from datetime import UTC, datetime
 from sqlalchemy import select
 
 from app.config import settings
@@ -10,7 +10,6 @@ from app.models.market import AssetType, Trade
 from app.models.player import Player, PlayerRole
 from app.models.tick import Tick
 from app.services.admin import PAUSE_KEY
-
 
 # ── Local fixtures ──
 

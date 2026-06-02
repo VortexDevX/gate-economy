@@ -2,6 +2,7 @@ import uuid
 
 import structlog
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -89,7 +90,11 @@ async def register(
         memo=f"Starting grant for {username}",
     )
 
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise AuthError("Username or email already taken")
 
     log.info("player_registered", player_id=str(player.id), username=username)
     return player
@@ -136,8 +141,13 @@ async def refresh_access_token(
     if player_id is None:
         raise AuthError("Invalid token payload")
 
+    try:
+        parsed_player_id = uuid.UUID(player_id)
+    except (TypeError, ValueError):
+        raise AuthError("Invalid token payload")
+
     result = await session.execute(
-        select(Player).where(Player.id == uuid.UUID(player_id))
+        select(Player).where(Player.id == parsed_player_id)
     )
     player = result.scalar_one_or_none()
     if player is None:

@@ -49,7 +49,7 @@ export default function OrderForm({
   const qty = parseInt(quantity, 10) || 0;
   const totalMicro = priceMicro * qty;
 
-  // Rough fee estimate (base 0.5%)
+  // UI cannot see live admin fee tuning; backend performs final escrow validation.
   const estFeeMicro = Math.round(totalMicro * 0.005);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -65,8 +65,8 @@ export default function OrderForm({
       setErrorMsg("Price must be greater than 0");
       return;
     }
-    if (side === "BUY" && player && player.balance_micro < totalMicro + estFeeMicro) {
-      setErrorMsg("Insufficient balance for estimated escrow.");
+    if (side === "BUY" && player && player.balance_micro < totalMicro) {
+      setErrorMsg("Insufficient balance for order cost before fees.");
       return;
     }
     if (side === "BUY" && visibleAskQty > 0 && qty > visibleAskQty) {
@@ -195,7 +195,7 @@ export default function OrderForm({
             <span className="font-mono">¤ {formatCurrency(totalMicro)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-400">Est. Fee (~0.5%)</span>
+            <span className="text-gray-400">Min. Fee Est.</span>
             <span className="font-mono text-gray-500">
               ¤ {formatCurrency(estFeeMicro)}
             </span>
@@ -213,7 +213,7 @@ export default function OrderForm({
               <span className="text-gray-400">Your Balance</span>
               <span
                 className={`font-mono ${
-                  player.balance_micro < totalMicro + estFeeMicro
+                  player.balance_micro < totalMicro
                     ? "text-red-400"
                     : "text-gray-300"
                 }`}
@@ -229,6 +229,11 @@ export default function OrderForm({
       {side === "BUY" && visibleAskQty > 0 && (
         <div className="text-xs text-gray-400 bg-gray-800/40 border border-gray-700 rounded px-3 py-2">
           Visible ask liquidity: {visibleAskQty} shares
+        </div>
+      )}
+      {side === "BUY" && priceMicro > 0 && qty > 0 && (
+        <div className="text-xs text-gray-400 bg-gray-800/40 border border-gray-700 rounded px-3 py-2">
+          Progressive fees are finalized by the engine on the next tick; orders can still fail if escrow is short.
         </div>
       )}
       {errorMsg && (

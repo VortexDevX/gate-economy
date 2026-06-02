@@ -5,15 +5,15 @@ import { useRealtimeStore } from "../stores/realtime";
 import { formatCurrency } from "../utils/format";
 
 const navItems = [
-  { to: "/dashboard", label: "Dashboard", icon: "space_dashboard" },
-  { to: "/gates", label: "Gates", icon: "hive" },
-  { to: "/discover", label: "Discover", icon: "travel_explore" },
+  { to: "/dashboard", label: "Dashboard", icon: "dashboard" },
+  { to: "/gates", label: "Gates", icon: "castle" },
+  { to: "/discover", label: "Discover", icon: "explore" },
   { to: "/orders", label: "Orders", icon: "receipt_long" },
-  { to: "/guilds", label: "Guilds", icon: "shield" },
+  { to: "/guilds", label: "Guilds", icon: "groups" },
   { to: "/leaderboard", label: "Leaderboard", icon: "leaderboard" },
   { to: "/news", label: "News", icon: "newspaper" },
-  { to: "/events", label: "Events", icon: "bolt" },
-  { to: "/profile", label: "Profile", icon: "account_circle" },
+  { to: "/events", label: "Events", icon: "event" },
+  { to: "/profile", label: "Profile", icon: "person" },
   { to: "/admin", label: "Admin", icon: "admin_panel_settings", adminOnly: true },
 ];
 
@@ -33,53 +33,90 @@ export default function Layout() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col px-3 md:px-5 py-3 md:py-4 gap-4">
-      {/* Top nav */}
-      <header className="nm-shell px-6 py-4 flex items-center justify-between rounded-2xl">
-        <Link to="/dashboard" className="flex items-center gap-3 min-w-0">
-          <span className="w-10 h-10 rounded-xl bg-brand-600 text-white font-bold text-base inline-flex items-center justify-center">
+    <div className="min-h-screen">
+      <nav className="hidden md:flex fixed left-0 top-0 h-full w-[260px] nm-sidebar px-4 py-8 flex-col z-40">
+        <Link to="/dashboard" className="flex items-center gap-3 min-w-0 px-2 mb-8">
+          <span className="dge-brand-mark shrink-0">
             DG
           </span>
-          <span className="text-xl md:text-[1.65rem] font-semibold tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
-            Dungeon Gate Economy
+          <span className="min-w-0">
+            <span className="block text-lg font-semibold whitespace-nowrap overflow-hidden text-ellipsis">
+              Dungeon Gate
+            </span>
+            <span className="block nm-soft-note text-xs font-mono uppercase">
+              Economy Node v1.0.4
+            </span>
           </span>
         </Link>
 
+        <div className="flex flex-col gap-1 overflow-y-auto">
+          {visibleNavItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                `nm-nav-item text-sm transition-colors ${
+                  isActive ? "nm-nav-item-active" : "nm-nav-item-idle"
+                }`
+              }
+            >
+              <span className="material-symbols-rounded text-xl">{item.icon}</span>
+              <span>{item.label}</span>
+            </NavLink>
+          ))}
+        </div>
+      </nav>
+
+      <header className="fixed top-0 left-0 md:left-[260px] right-0 h-16 nm-topbar px-4 md:px-8 flex items-center justify-between gap-3 z-30">
+        <Link to="/dashboard" className="md:hidden flex items-center gap-2 min-w-0">
+          <span className="dge-brand-mark dge-brand-mark-sm shrink-0">DG</span>
+          <span className="font-semibold truncate">Dungeon Gate</span>
+        </Link>
+        <div className="hidden md:flex items-center gap-3">
+          <span className="text-xs px-3 py-1.5 rounded-full border border-gray-700 bg-gray-900 inline-flex items-center gap-2 font-mono uppercase">
+            <span className="dge-status-dot" />
+            WS {connectionState}
+          </span>
+        </div>
+
         {player && (
-          <div className="flex items-center gap-4">
-            <span className="text-xs px-2 py-1 rounded-full border border-gray-700 bg-gray-900">
-              WS: {connectionState}
+          <div className="flex items-center justify-end gap-2 md:gap-4 min-w-0">
+            <span className="md:hidden text-xs px-2 py-1 rounded-full border border-gray-700 bg-gray-900 inline-flex items-center gap-2">
+              <span className="dge-status-dot" />
+              WS
             </span>
+            <span className="hidden sm:inline text-sm text-gray-400 truncate max-w-36">
+              {player.username}
+            </span>
+            {player.role === "ADMIN" && (
+              <span
+                className="hidden lg:inline text-xs px-2 py-0.5 rounded-full border"
+                style={{
+                  background: "rgba(241, 104, 88, 0.14)",
+                  borderColor: "rgba(241, 104, 88, 0.5)",
+                  color: "var(--nm-bad)",
+                }}
+              >
+                ADMIN
+              </span>
+            )}
+            <div className="text-sm font-mono text-brand-300 whitespace-nowrap px-3 py-1.5 border border-gray-800 bg-gray-900 rounded inline-flex items-center gap-1.5">
+              <span className="material-symbols-rounded text-base">account_balance_wallet</span>
+              ¤ {formatCurrency(player.balance_micro)}
+            </div>
             <button
               onClick={toggleMode}
-              className="text-sm text-gray-500 hover:text-gray-200 transition-colors px-2 py-1 rounded-md inline-flex items-center gap-1"
+              className="text-sm text-gray-500 hover:text-gray-200 transition-colors px-2.5 py-1.5 rounded-md inline-flex items-center gap-1 border border-gray-800 bg-gray-900"
+              title="Toggle theme"
             >
               <span className="material-symbols-rounded text-sm">
                 {mode === "dark" ? "light_mode" : "dark_mode"}
               </span>
-              {mode === "dark" ? "Light" : "Dark"}
+              <span className="hidden sm:inline">{mode === "dark" ? "Light" : "Dark"}</span>
             </button>
-            <div className="text-sm flex items-center gap-2">
-              <span className="text-gray-400 mr-2">{player.username}</span>
-              {player.role === "ADMIN" && (
-                <span
-                  className="text-xs px-2 py-0.5 rounded-full mr-2 border"
-                  style={{
-                    background: "linear-gradient(145deg, #ffe6e6, #ffdada)",
-                    borderColor: "#f3b1b1",
-                    color: "#9b2c2c",
-                  }}
-                >
-                  ADMIN
-                </span>
-              )}
-            </div>
-            <div className="text-sm font-mono text-brand-300 whitespace-nowrap">
-              ¤ {formatCurrency(player.balance_micro)}
-            </div>
             <button
               onClick={handleLogout}
-              className="text-sm text-gray-500 hover:text-gray-200 transition-colors px-2 py-1 rounded-md"
+              className="text-sm text-gray-500 hover:text-gray-200 transition-colors px-3 py-1.5 rounded-md border border-gray-800 bg-gray-900"
             >
               Logout
             </button>
@@ -87,31 +124,7 @@ export default function Layout() {
         )}
       </header>
 
-      <div className="flex flex-1 gap-4">
-        {/* Sidebar */}
-        <nav className="w-64 nm-sidebar py-4 px-2 shrink-0 hidden md:block rounded-2xl">
-          {visibleNavItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `nm-nav-item mx-1.5 my-1 text-sm transition-colors ${
-                  isActive
-                    ? "nm-nav-item-active"
-                    : "nm-nav-item-idle"
-                }`
-              }
-            >
-              <span className="nm-icon-chip">
-                <span className="material-symbols-rounded text-base">{item.icon}</span>
-              </span>
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
-        </nav>
-
-        {/* Mobile nav */}
-        <div className="md:hidden nm-sidebar px-2 py-2 flex gap-1 overflow-x-auto rounded-xl">
+      <div className="md:hidden fixed top-16 left-0 right-0 nm-mobile-nav px-3 py-2 flex gap-2 overflow-x-auto z-30">
           {visibleNavItems.map((item) => (
             <NavLink
               key={item.to}
@@ -128,13 +141,11 @@ export default function Layout() {
               <span>{item.label}</span>
             </NavLink>
           ))}
-        </div>
-
-        {/* Main content */}
-        <main className="flex-1 p-6 md:p-7 overflow-auto nm-main rounded-2xl">
-          <Outlet />
-        </main>
       </div>
+
+      <main className="relative z-10 pt-32 md:pt-24 pb-8 px-4 md:px-8 md:ml-[260px]">
+        <Outlet />
+      </main>
     </div>
   );
 }

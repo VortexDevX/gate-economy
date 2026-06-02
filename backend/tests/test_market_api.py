@@ -8,8 +8,7 @@ import uuid
 
 import pytest
 
-from app.models.market import AssetType, MarketPrice, Order, OrderSide, OrderStatus, Trade
-
+from app.models.market import AssetType, MarketPrice, Order, OrderSide, Trade
 
 # ── Helpers ──
 

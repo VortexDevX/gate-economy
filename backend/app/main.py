@@ -7,28 +7,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
+from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.events import router as events_router
 from app.api.gates import router as gates_router
 from app.api.guilds import router as guilds_router
 from app.api.health import router as health_router
 from app.api.intents import router as intents_router
+from app.api.leaderboard import router as leaderboard_router
 from app.api.market import router as market_router
+from app.api.metrics import router as metrics_router
+from app.api.news import router as news_router
 from app.api.orders import router as orders_router
 from app.api.players import router as players_router
 from app.api.simulation import router as simulation_router
-from app.api.news import router as news_router
-from app.api.leaderboard import router as leaderboard_router
 from app.api.ws import router as ws_router
 from app.config import settings
 from app.database import get_session_factory
 from app.models.gate import GateRank, GateRankProfile
-from app.models.treasury import AccountType, SystemAccount
 from app.models.ledger import AccountEntityType, EntryType
 from app.models.player import Player
+from app.models.treasury import AccountType, SystemAccount
 from app.services.transfer import transfer
-from app.api.admin import router as admin_router
-from app.api.metrics import router as metrics_router
 
 
 def setup_logging() -> None:
@@ -245,7 +245,7 @@ async def seed_simulation_parameters() -> None:
         created = await seed_parameters(session)
         await session.commit()
         log.info("simulation_parameters_seeded", created=created)
-        
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
@@ -308,7 +308,7 @@ def create_app() -> FastAPI:
     app.include_router(ws_router)
     app.include_router(admin_router)
     app.include_router(metrics_router)
-    
+
     return app
 
 

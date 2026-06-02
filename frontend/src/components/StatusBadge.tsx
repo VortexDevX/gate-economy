@@ -13,44 +13,44 @@ const variantStyles: Record<
   { background: string; border: string; color: string }
 > = {
   green: {
-    background: "linear-gradient(145deg, #e5faec, #d7f4e1)",
-    border: "#b9e8ca",
-    color: "#1c7a44",
+    background: "rgba(56, 193, 114, 0.14)",
+    border: "rgba(56, 193, 114, 0.48)",
+    color: "var(--nm-good)",
   },
   blue: {
-    background: "linear-gradient(145deg, #e6eeff, #d7e5ff)",
-    border: "#bfd3ff",
-    color: "#2558c7",
+    background: "rgba(57, 208, 162, 0.12)",
+    border: "rgba(57, 208, 162, 0.42)",
+    color: "var(--nm-accent)",
   },
   amber: {
-    background: "linear-gradient(145deg, #fff5df, #ffefcf)",
-    border: "#f4dcab",
-    color: "#9f6a08",
+    background: "rgba(241, 179, 71, 0.16)",
+    border: "rgba(241, 179, 71, 0.46)",
+    color: "var(--nm-warn)",
   },
   red: {
-    background: "linear-gradient(145deg, #ffe7e7, #ffdada)",
-    border: "#f3b5b5",
-    color: "#af2f2f",
+    background: "rgba(241, 104, 88, 0.14)",
+    border: "rgba(241, 104, 88, 0.48)",
+    color: "var(--nm-bad)",
   },
   gray: {
-    background: "linear-gradient(145deg, #eef2f8, #e6ebf4)",
-    border: "#d2dce9",
-    color: "#52617c",
+    background: "rgba(184, 165, 131, 0.12)",
+    border: "rgba(184, 165, 131, 0.36)",
+    color: "var(--nm-muted)",
   },
   purple: {
-    background: "linear-gradient(145deg, #f1e9ff, #e7dbff)",
-    border: "#d6c1ff",
-    color: "#6241b0",
+    background: "rgba(141, 108, 255, 0.15)",
+    border: "rgba(141, 108, 255, 0.44)",
+    color: "#b9a7ff",
   },
   orange: {
-    background: "linear-gradient(145deg, #ffeedf, #ffe5d0)",
-    border: "#f6cfa7",
-    color: "#ab5e10",
+    background: "rgba(217, 152, 62, 0.16)",
+    border: "rgba(217, 152, 62, 0.48)",
+    color: "var(--nm-primary-soft)",
   },
   yellow: {
-    background: "linear-gradient(145deg, #fff8dd, #fff2c8)",
-    border: "#f3e0a3",
-    color: "#8f6f00",
+    background: "rgba(255, 218, 112, 0.18)",
+    border: "rgba(255, 218, 112, 0.5)",
+    color: "#ffd66b",
   },
 };
 
@@ -63,8 +63,7 @@ export function Badge({ label, variant }: { label: string; variant: Variant }) {
         background: style.background,
         borderColor: style.border,
         color: style.color,
-        boxShadow:
-          "4px 4px 9px rgba(156, 172, 196, 0.28), -3px -3px 9px rgba(255,255,255,0.9)",
+        boxShadow: "inset 0 1px 0 rgba(255, 232, 178, 0.12)",
       }}
     >
       {label}

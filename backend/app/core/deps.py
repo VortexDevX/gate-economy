@@ -58,8 +58,16 @@ async def get_current_player(
             detail="Invalid token payload",
         )
 
+    try:
+        parsed_player_id = uuid.UUID(player_id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+        )
+
     result = await db.execute(
-        select(Player).where(Player.id == uuid.UUID(player_id))
+        select(Player).where(Player.id == parsed_player_id)
     )
     player = result.scalar_one_or_none()
 

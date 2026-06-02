@@ -4,6 +4,7 @@ import uuid
 
 import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -102,19 +103,67 @@ async def process_create_guild(
             )
             return
 
-    # Charge creation fee
     try:
-        await transfer(
-            session=session,
-            from_type=AccountEntityType.PLAYER,
-            from_id=intent.player_id,
-            to_type=AccountEntityType.SYSTEM,
-            to_id=treasury_id,
-            amount=settings.guild_creation_cost_micro,
-            entry_type=EntryType.GUILD_CREATION,
-            memo=f"Guild creation: {name}",
-            tick_id=tick_id,
-        )
+        async with session.begin_nested():
+            # Charge creation fee
+            await transfer(
+                session=session,
+                from_type=AccountEntityType.PLAYER,
+                from_id=intent.player_id,
+                to_type=AccountEntityType.SYSTEM,
+                to_id=treasury_id,
+                amount=settings.guild_creation_cost_micro,
+                entry_type=EntryType.GUILD_CREATION,
+                memo=f"Guild creation: {name}",
+                tick_id=tick_id,
+            )
+
+            # Create guild record
+            total_shares = settings.guild_total_shares
+            guild = Guild(
+                name=name,
+                founder_id=intent.player_id,
+                treasury_micro=0,
+                total_shares=total_shares,
+                public_float_pct=public_float_pct,
+                dividend_policy=dividend_policy,
+                auto_dividend_pct=(
+                    auto_dividend_pct
+                    if dividend_policy == DividendPolicy.AUTO_FIXED_PCT
+                    else None
+                ),
+                status=GuildStatus.ACTIVE,
+                created_at_tick=tick_number,
+                maintenance_cost_micro=settings.guild_base_maintenance_micro,
+            )
+            session.add(guild)
+            await session.flush()
+
+            # Membership
+            session.add(GuildMember(
+                guild_id=guild.id,
+                player_id=intent.player_id,
+                role=GuildRole.LEADER,
+                joined_at_tick=tick_number,
+            ))
+
+            # Share allocation
+            founder_shares = total_shares - int(total_shares * public_float_pct)
+            float_shares = total_shares - founder_shares
+
+            session.add(GuildShare(
+                guild_id=guild.id,
+                player_id=intent.player_id,
+                quantity=founder_shares,
+            ))
+            if float_shares > 0:
+                session.add(GuildShare(
+                    guild_id=guild.id,
+                    player_id=guild.id,  # guild holds own ISO float
+                    quantity=float_shares,
+                ))
+
+            await session.flush()
     except InsufficientBalance:
         intent.status = IntentStatus.REJECTED
         intent.reject_reason = (
@@ -122,51 +171,10 @@ async def process_create_guild(
             f"(cost: {settings.guild_creation_cost_micro})"
         )
         return
-
-    # Create guild record
-    total_shares = settings.guild_total_shares
-    guild = Guild(
-        name=name,
-        founder_id=intent.player_id,
-        treasury_micro=0,
-        total_shares=total_shares,
-        public_float_pct=public_float_pct,
-        dividend_policy=dividend_policy,
-        auto_dividend_pct=(
-            auto_dividend_pct
-            if dividend_policy == DividendPolicy.AUTO_FIXED_PCT
-            else None
-        ),
-        status=GuildStatus.ACTIVE,
-        created_at_tick=tick_number,
-        maintenance_cost_micro=settings.guild_base_maintenance_micro,
-    )
-    session.add(guild)
-    await session.flush()
-
-    # Membership
-    session.add(GuildMember(
-        guild_id=guild.id,
-        player_id=intent.player_id,
-        role=GuildRole.LEADER,
-        joined_at_tick=tick_number,
-    ))
-
-    # Share allocation
-    founder_shares = total_shares - int(total_shares * public_float_pct)
-    float_shares = total_shares - founder_shares
-
-    session.add(GuildShare(
-        guild_id=guild.id,
-        player_id=intent.player_id,
-        quantity=founder_shares,
-    ))
-    if float_shares > 0:
-        session.add(GuildShare(
-            guild_id=guild.id,
-            player_id=guild.id,  # guild holds own ISO float
-            quantity=float_shares,
-        ))
+    except IntegrityError:
+        intent.status = IntentStatus.REJECTED
+        intent.reject_reason = f"Guild name '{name}' is already taken"
+        return
 
     logger.info(
         "guild_created",

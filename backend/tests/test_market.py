@@ -27,7 +27,6 @@ from app.services.order_matching import calculate_iso_price, cancel_collapsed_ga
 from app.services.transfer import transfer
 from app.simulation.tick import execute_tick
 
-
 # ── Disable system spawns for all tests in this module ──
 
 

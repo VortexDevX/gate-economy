@@ -93,9 +93,9 @@ export default function DiscoverPage() {
         <div
           className="text-xs rounded px-3 py-2 border"
           style={{
-            background: "linear-gradient(145deg, #ffe7e7, #ffdada)",
-            borderColor: "#f3b5b5",
-            color: "#af2f2f",
+            background: "rgba(241, 104, 88, 0.14)",
+            borderColor: "rgba(241, 104, 88, 0.48)",
+            color: "var(--nm-bad)",
           }}
         >
           {errorMsg}
@@ -105,9 +105,9 @@ export default function DiscoverPage() {
         <div
           className="text-xs rounded px-3 py-2 border"
           style={{
-            background: "linear-gradient(145deg, #e7f9ef, #daf5e5)",
-            borderColor: "#bde8ce",
-            color: "#1f7d49",
+            background: "rgba(56, 193, 114, 0.14)",
+            borderColor: "rgba(56, 193, 114, 0.48)",
+            color: "var(--nm-good)",
           }}
         >
           {message}

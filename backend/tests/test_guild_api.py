@@ -5,10 +5,16 @@ import uuid
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import select
 
 from app.models.gate import DiscoveryType, Gate, GateRank, GateStatus
-from app.models.guild import DividendPolicy, Guild, GuildGateHolding, GuildMember, GuildRole, GuildShare
+from app.models.guild import (
+    DividendPolicy,
+    Guild,
+    GuildGateHolding,
+    GuildMember,
+    GuildRole,
+    GuildShare,
+)
 from app.models.player import Player
 
 
@@ -128,7 +134,8 @@ async def test_get_guild_detail_includes_members_holdings_shareholders(
     assert data["id"] == str(seeded_guild)
     assert data["name"] == "ApiGuild"
     assert data["status"] == "ACTIVE"
-    assert data["shareholder_count"] == 2  # founder + external shareholder, excludes guild self-hold
+    # founder + external shareholder, excludes guild self-hold
+    assert data["shareholder_count"] == 2
     assert len(data["members"]) == 1
     assert data["members"][0]["role"] == "LEADER"
     assert len(data["gate_holdings"]) == 1

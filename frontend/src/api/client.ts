@@ -6,29 +6,29 @@ const client = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// --- Token storage (localStorage) ---
+// --- Token storage (sessionStorage) ---
 
 const TOKEN_KEY = "dge_access_token";
 const REFRESH_KEY = "dge_refresh_token";
 
 export function getAccessToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionStorage.getItem(TOKEN_KEY);
 }
 
 export function getRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_KEY);
+  return sessionStorage.getItem(REFRESH_KEY);
 }
 
 export function setTokens(access: string, refresh: string | null): void {
-  localStorage.setItem(TOKEN_KEY, access);
+  sessionStorage.setItem(TOKEN_KEY, access);
   if (refresh) {
-    localStorage.setItem(REFRESH_KEY, refresh);
+    sessionStorage.setItem(REFRESH_KEY, refresh);
   }
 }
 
 export function clearTokens(): void {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(REFRESH_KEY);
 }
 
 // --- Request interceptor: attach access token ---
