@@ -59,7 +59,11 @@ async def _create_gate(
     discovery_type: DiscoveryType,
     discoverer_id: uuid.UUID | None = None,
 ) -> Gate:
-    """Create a gate with randomized params and assign all shares to treasury."""
+    """Create a gate and allocate its initial shares.
+
+    System gates remain treasury-owned. Player discoveries award a configurable
+    finder stake while the treasury keeps the ISO inventory.
+    """
     gate = Gate(
         rank=profile.rank,
         stability=profile.stability_init,
@@ -76,13 +80,29 @@ async def _create_gate(
     session.add(gate)
     await session.flush()  # populate gate.id
 
-    # Treasury holds all initial shares (sold via market in Phase 5)
-    share = GateShare(
-        gate_id=gate.id,
-        player_id=treasury_id,
-        quantity=profile.total_shares,
+    finder_shares = 0
+    if discovery_type == DiscoveryType.PLAYER and discoverer_id is not None:
+        finder_share_pct = max(
+            0.0, min(1.0, settings.player_discovery_finder_share_pct)
+        )
+        finder_shares = int(profile.total_shares * finder_share_pct)
+
+    treasury_shares = profile.total_shares - finder_shares
+    session.add(
+        GateShare(
+            gate_id=gate.id,
+            player_id=treasury_id,
+            quantity=treasury_shares,
+        )
     )
-    session.add(share)
+    if finder_shares > 0 and discoverer_id is not None:
+        session.add(
+            GateShare(
+                gate_id=gate.id,
+                player_id=discoverer_id,
+                quantity=finder_shares,
+            )
+        )
 
     logger.info(
         "gate_created",
@@ -91,6 +111,8 @@ async def _create_gate(
         stability=round(gate.stability, 2),
         base_yield_micro=gate.base_yield_micro,
         total_shares=gate.total_shares,
+        finder_shares=finder_shares,
+        treasury_shares=treasury_shares,
         discovery_type=discovery_type.value,
     )
     return gate

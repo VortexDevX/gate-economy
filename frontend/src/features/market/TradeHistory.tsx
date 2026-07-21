@@ -1,5 +1,5 @@
 import type { TradeListResponse } from "../../api/types";
-import { formatCurrency, shortId } from "../../utils/format";
+import { formatCurrency } from "../../utils/format";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import EmptyState from "../../components/EmptyState";
 
@@ -32,7 +32,9 @@ export default function TradeHistory({ data, isLoading }: Props) {
               key={trade.id}
               className="border-b border-gray-800/50"
             >
-              <td className="py-1.5 pr-3 text-gray-400">#{trade.tick_id}</td>
+              <td className="py-1.5 pr-3 text-gray-400">
+                T{trade.tick_number ?? trade.tick_id}
+              </td>
               <td className="py-1.5 pr-3 font-mono">
                 ¤ {formatCurrency(trade.price_micro)}
               </td>

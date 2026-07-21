@@ -1,12 +1,53 @@
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { useAuthStore } from "../../stores/auth";
+import {
+  ArrowRight,
+  Coins,
+  Compass,
+  KeyRound,
+  Landmark,
+  LockKeyhole,
+  Mail,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+} from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AxiosError } from "axios";
 import type { ApiError } from "../../api/types";
+import { useAuthStore } from "../../stores/auth";
+
+type LoginLocationState = {
+  registered?: boolean;
+};
+
+const playSteps = [
+  {
+    icon: Compass,
+    number: "01",
+    title: "Scout a gate",
+    copy: "Compare its share price, income, and chance of collapse.",
+  },
+  {
+    icon: Coins,
+    number: "02",
+    title: "Take a position",
+    copy: "Buy shares now or place an order at the price you want.",
+  },
+  {
+    icon: TrendingUp,
+    number: "03",
+    title: "Build your fortune",
+    copy: "Collect gate income, react to events, and grow into a guild.",
+  },
+];
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const login = useAuthStore((s) => s.login);
+  const registered = Boolean(
+    (location.state as LoginLocationState | null)?.registered,
+  );
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,108 +73,166 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="auth-shell">
-      <div className="auth-grid">
-        <section className="auth-lore hidden md:flex flex-col justify-between">
-          <div>
-            <span className="nm-panel-title">Closed-loop market sim</span>
-            <h1 className="nm-page-title font-bold mt-4">
-              Dungeon Gate Economy
-            </h1>
-            <p className="nm-page-subtitle mt-3 max-w-md">
-              Trade gate shares, queue tick intents, and watch guild treasuries
-              rise or crack under dungeon pressure.
-            </p>
+    <main className="auth-game-shell">
+      <div className="auth-game-atmosphere" aria-hidden="true">
+        <div className="auth-game-atmosphere-glow" />
+        <div className="auth-game-atmosphere-runes" />
+        <div className="auth-game-atmosphere-grid" />
+      </div>
+
+      <header className="auth-game-brand">
+        <span className="auth-game-brand-mark" aria-hidden="true">
+          <Landmark size={24} strokeWidth={1.7} />
+        </span>
+        <span className="auth-game-brand-copy">
+          <strong>Dungeon Gate</strong>
+          <small>The Obsidian Exchange</small>
+        </span>
+        <span className="auth-game-live-status">
+          <span className="auth-game-live-pulse" aria-hidden="true" />
+          Market simulation
+        </span>
+      </header>
+
+      <div className="auth-game-layout">
+        <section className="auth-game-intro" aria-labelledby="login-intro-title">
+          <div className="auth-game-eyebrow">
+            <Sparkles size={15} aria-hidden="true" />
+            Your fortune waits beyond the gate
           </div>
-          <div className="grid grid-cols-3 gap-3 text-xs">
-            <div className="nm-card p-3">
-              <div className="nm-panel-title">Ticks</div>
-              <div className="font-mono mt-1">Deterministic</div>
-            </div>
-            <div className="nm-card p-3">
-              <div className="nm-panel-title">Assets</div>
-              <div className="font-mono mt-1">Gate Shares</div>
-            </div>
-            <div className="nm-card p-3">
-              <div className="nm-panel-title">Risk</div>
-              <div className="font-mono mt-1">Collapse</div>
-            </div>
+
+          <h1 id="login-intro-title" className="auth-game-title">
+            Trade the unknown.
+            <span>Outlast the collapse.</span>
+          </h1>
+          <p className="auth-game-lead">
+            Every dungeon gate produces wealth while it survives. Read the
+            risk, buy its shares, and escape before the gate breaks.
+          </p>
+
+          <ol className="auth-game-loop" aria-label="How to play">
+            {playSteps.map(({ icon: Icon, number, title, copy }) => (
+              <li className="auth-game-loop-step" key={number}>
+                <span className="auth-game-loop-icon" aria-hidden="true">
+                  <Icon size={20} strokeWidth={1.8} />
+                </span>
+                <span className="auth-game-loop-number">{number}</span>
+                <span className="auth-game-loop-copy">
+                  <strong>{title}</strong>
+                  <small>{copy}</small>
+                </span>
+              </li>
+            ))}
+          </ol>
+
+          <div className="auth-game-assurance">
+            <ShieldCheck size={19} aria-hidden="true" />
+            <span>
+              <strong>A living, closed-loop economy</strong>
+              Every coin, trade, payout, and loss remains inside the game.
+            </span>
           </div>
         </section>
 
-        <div className="auth-card">
-          <h1 className="text-2xl font-bold text-center mb-2">
-            Enter the Exchange
-          </h1>
-          <p className="text-gray-400 text-center text-sm mb-6">
-            Sign in to command your gates and guild positions.
-          </p>
+        <section className="auth-game-panel" aria-labelledby="login-title">
+          <div className="auth-game-panel-sigil" aria-hidden="true">
+            <KeyRound size={27} strokeWidth={1.5} />
+          </div>
+          <div className="auth-game-panel-heading">
+            <span className="auth-game-panel-kicker">Trader access</span>
+            <h2 id="login-title">Enter the Exchange</h2>
+            <p>Resume your portfolio and choose your next move.</p>
+          </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {registered && (
+            <div className="auth-game-success" role="status">
+              <ShieldCheck size={18} aria-hidden="true" />
+              <span>
+                <strong>Your trader account is ready.</strong>
+                Sign in to begin your first gate operation.
+              </span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="auth-game-form">
             {error && (
-              <div
-                className="text-sm rounded px-3 py-2 border"
-                style={{
-                  background: "rgba(241, 104, 88, 0.14)",
-                  borderColor: "rgba(241, 104, 88, 0.48)",
-                  color: "var(--nm-bad)",
-                }}
-              >
-                {error}
+              <div id="login-error" className="auth-game-error" role="alert">
+                <span className="auth-game-error-mark" aria-hidden="true">
+                  !
+                </span>
+                <span>{error}</span>
               </div>
             )}
 
-            <div>
-              <label htmlFor="email" className="block text-sm text-gray-300 mb-1">
-                Email
+            <div className="auth-game-field">
+              <label htmlFor="email">
+                <Mail size={15} aria-hidden="true" />
+                Email address
               </label>
-              <input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm
-                           focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
-              />
+              <div className="auth-game-input-wrap">
+                <Mail size={18} aria-hidden="true" />
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "login-error" : undefined}
+                  placeholder="trader@example.com"
+                />
+              </div>
             </div>
 
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm text-gray-300 mb-1"
-              >
+            <div className="auth-game-field">
+              <label htmlFor="password">
+                <LockKeyhole size={15} aria-hidden="true" />
                 Password
               </label>
-              <input
-                id="password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm
-                           focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
-              />
+              <div className="auth-game-input-wrap">
+                <LockKeyhole size={18} aria-hidden="true" />
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "login-error" : undefined}
+                  placeholder="Enter your password"
+                />
+              </div>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50
-                         text-white font-medium py-2 px-4 rounded transition-colors"
+              className="auth-game-primary-action"
+              aria-busy={loading}
             >
-              {loading ? "Signing in…" : "Sign In"}
+              <span>{loading ? "Opening the gate…" : "Enter the Exchange"}</span>
+              <ArrowRight size={19} aria-hidden="true" />
             </button>
           </form>
 
-          <p className="text-center text-sm text-gray-400 mt-6">
-            No account?{" "}
-            <Link to="/register" className="text-brand-400 hover:text-brand-300">
-              Register
-            </Link>
+          <div className="auth-game-divider">
+            <span>New to the Exchange?</span>
+          </div>
+          <Link to="/register" className="auth-game-secondary-action">
+            Create a trader account
+            <ArrowRight size={17} aria-hidden="true" />
+          </Link>
+
+          <p className="auth-game-panel-footnote">
+            Learn the market at your own pace. Your first objective will guide
+            you from scouting to your first share.
           </p>
-        </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

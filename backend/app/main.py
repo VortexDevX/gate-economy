@@ -253,7 +253,10 @@ async def lifespan(app: FastAPI):
     log.info("application_startup", version=app.version)
     await seed_treasury()
     await seed_gate_rank_profiles()
-    await seed_ai_players()
+    if settings.seed_ai_players_on_startup:
+        await seed_ai_players()
+    else:
+        log.info("ai_player_seed_skipped")
     await seed_simulation_parameters()
     yield
     log.info("application_shutdown")

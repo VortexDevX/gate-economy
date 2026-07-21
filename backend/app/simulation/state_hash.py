@@ -20,9 +20,9 @@ async def compute_state_hash(session: AsyncSession) -> str:
     - Gate counts per status
     - Sum of gate stabilities (truncated to int)
     - Total gate shares held
-    - Open order count
+    - Canonical OPEN/PARTIAL order state
     - Total escrow locked in open BUY orders
-    - Total trade count
+    - Aggregate trade count (historical trade rows are not re-serialized)
 
     Returns 64-char hex digest.
     """
@@ -51,12 +51,11 @@ async def compute_state_hash(session: AsyncSession) -> str:
     gate_share_rows = result.scalars().all()
 
     result = await session.execute(
-        select(Order).order_by(Order.asset_type, Order.asset_id, Order.id)
+        select(Order)
+        .where(Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]))
+        .order_by(Order.asset_type, Order.asset_id, Order.id)
     )
     order_rows = result.scalars().all()
-
-    result = await session.execute(select(Trade).order_by(Trade.id))
-    trade_rows = result.scalars().all()
 
     result = await session.execute(
         select(MarketPrice).order_by(MarketPrice.asset_type, MarketPrice.asset_id)
@@ -190,15 +189,6 @@ async def compute_state_hash(session: AsyncSession) -> str:
             f"{order.escrow_micro}:{order.status.value}:"
             f"{order.created_at_tick}:{order.updated_at_tick}:"
             f"{order.is_system}:{order.guild_id}"
-        )
-
-    for trade in trade_rows:
-        parts.append(
-            "trade:"
-            f"{trade.id}:{trade.buy_order_id}:{trade.sell_order_id}:"
-            f"{trade.asset_type.value}:{trade.asset_id}:{trade.quantity}:"
-            f"{trade.price_micro}:{trade.buyer_fee_micro}:"
-            f"{trade.seller_fee_micro}:{trade.tick_id}"
         )
 
     for mp in market_price_rows:

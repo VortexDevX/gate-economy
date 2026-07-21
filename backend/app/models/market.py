@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Enum, Integer
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Enum, Index, Integer, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +33,22 @@ class Order(Base):
         CheckConstraint("price_limit_micro > 0", name="ck_order_price_positive"),
         CheckConstraint("filled_quantity >= 0", name="ck_order_filled_nonneg"),
         CheckConstraint("escrow_micro >= 0", name="ck_order_escrow_nonneg"),
+        Index(
+            "ix_orders_open_book",
+            "asset_type", "asset_id", "side", "price_limit_micro",
+            "created_at_tick", "id",
+            postgresql_where=text("status IN ('OPEN', 'PARTIAL')"),
+        ),
+        Index(
+            "ix_orders_player_open_asset",
+            "player_id", "asset_type", "asset_id",
+            postgresql_where=text("status IN ('OPEN', 'PARTIAL')"),
+        ),
+        Index(
+            "ix_orders_open_state",
+            "asset_type", "asset_id", "id",
+            postgresql_where=text("status IN ('OPEN', 'PARTIAL')"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -79,6 +95,13 @@ class Order(Base):
 
 class Trade(Base):
     __tablename__ = "trades"
+    __table_args__ = (
+        Index(
+            "ix_trades_asset_recent",
+            "asset_type", "asset_id", "created_at", "id",
+        ),
+        Index("ix_trades_tick_asset", "tick_id", "asset_type", "asset_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

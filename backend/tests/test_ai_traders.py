@@ -756,3 +756,49 @@ async def test_ai_orders_matched_via_standard_matching(
         assert trade_count >= 1
 
         await _check_conservation(session)
+
+
+@pytest.mark.asyncio
+async def test_ai_orchestrator_refreshes_bounded_round_robin_gate_batches(
+    session_factory: async_sessionmaker,
+):
+    """Production AI refreshes only its deterministic gate batch each tick."""
+    old_batch_size = settings.ai_gate_batch_size
+    settings.ai_gate_batch_size = 2
+    try:
+        async with session_factory() as session:
+            await _seed_rank_profiles(session)
+            mm = await _create_ai_player(session, "ai_market_maker", 100_000_000)
+            gates = [
+                await _create_gate(session, status=GateStatus.ACTIVE)
+                for _ in range(5)
+            ]
+            for gate in gates:
+                await _set_market_price(session, gate.id, last_price=10_000)
+            await session.commit()
+
+        sorted_gate_ids = sorted((gate.id for gate in gates), key=str)
+        async with session_factory() as session:
+            treasury = await _get_treasury(session)
+            await run_ai_traders(session, 1, 1, treasury.id, TickRNG(1))
+            await session.flush()
+            result = await session.execute(
+                select(Order.asset_id).where(
+                    Order.player_id == mm.id,
+                    Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
+                )
+            )
+            assert set(result.scalars().all()) == set(sorted_gate_ids[:2])
+
+            await run_ai_traders(session, 2, 2, treasury.id, TickRNG(2))
+            await session.flush()
+            result = await session.execute(
+                select(Order.asset_id).where(
+                    Order.player_id == mm.id,
+                    Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
+                )
+            )
+            assert set(result.scalars().all()) == set(sorted_gate_ids[:4])
+            await _check_conservation(session)
+    finally:
+        settings.ai_gate_batch_size = old_batch_size

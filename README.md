@@ -1,124 +1,126 @@
-<div align="center">
-
 # Dungeon Gate Economy
 
-### Simulation-first closed-loop economy where dungeon gates become tradable assets
+An occult market game where unstable dungeon gates are income-producing,
+tradable assets. Players scan yield and collapse risk, place orders into a real
+price-time book, collect cycle income, discover new gates, and build guild
+treasuries inside a deterministic closed economy.
 
-<p>
-  <img src="https://img.shields.io/badge/FastAPI-111827?style=for-the-badge" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/Python-111827?style=for-the-badge" alt="Python" />
-  <img src="https://img.shields.io/badge/React-111827?style=for-the-badge" alt="React" />
-  <img src="https://img.shields.io/badge/Simulation-111827?style=for-the-badge" alt="Simulation" />
-  <img src="https://img.shields.io/badge/Market%20Engine-111827?style=for-the-badge" alt="Market Engine" />
-  <img src="https://img.shields.io/badge/PostgreSQL-111827?style=for-the-badge" alt="PostgreSQL" />
-</p>
-<p>
-  <a href="https://github.com/VortexDevX/gate-economy"><img src="https://img.shields.io/badge/GitHub%20Repo-111827?style=for-the-badge" alt="GitHub Repo" /></a>
-</p>
+The interface direction is **Arcane Exchange**: dense enough to trade from,
+legible enough to learn, and tied directly to simulation truth.
 
-</div>
+## What is playable
 
----
+- deterministic simulation cycles with reproducible state hashes
+- gate discovery, stability decay, yield, collapse, and share ownership
+- limit orders, escrow, price-time matching, fees, trade prints, and history
+- player portfolio with marked value, projected yield, and unstable exposure
+- sortable gate scanner with price, spread, volume, yield, and risk
+- guild creation, shares, investments, maintenance, insolvency, and dividends
+- AI liquidity, world events, news, seasons, leaderboards, and WebSocket updates
+- admin parameters, conservation audit, metrics, Prometheus, and Grafana
 
-## Overview
+The product diagnosis and prioritized roadmap live in
+[`docs/PRODUCT_RESCUE.md`](docs/PRODUCT_RESCUE.md).
 
-Dungeon Gate Economy models a player-driven market around dungeon gates, deterministic ticks, player intents, matching, guild economics, AI traders, and anti-exploit monitoring. The cleanup keeps simulation logic and conservation assumptions intact.
+## Stack
 
-<table>
-<tr>
-<td width="25%"><strong>Status</strong></td>
-<td>Simulation and frontend/backend app in progress</td>
-</tr>
-<tr>
-<td><strong>Stack</strong></td>
-<td>FastAPI, SQLAlchemy, Alembic, Pydantic, React/Vite, TypeScript, market simulation services</td>
-</tr>
-<tr>
-<td><strong>Built for</strong></td>
-<td>Developers exploring game economy simulation and deterministic market systems</td>
-</tr>
-</table>
+| Layer | Technology |
+| --- | --- |
+| Simulation/API | Python 3.11, FastAPI, Pydantic, SQLAlchemy async |
+| Persistence | PostgreSQL 15, Alembic |
+| Cycle worker | Celery, Redis |
+| Client | React 18, TypeScript, Vite, TanStack Query, Zustand |
+| Operations | Docker Compose, Prometheus, Grafana |
 
-## Highlights
+## Run locally
 
-- Closed-loop monetary and market simulation concepts
-- Intent APIs, order matching, metrics, and admin-style surfaces
-- Python backend plus Vite/React frontend layout
-- Migrations left behaviorally untouched
-- Screenshot placeholder folder added
+Prerequisites: Docker Desktop, Node.js 20+, and npm.
 
-## Feature Map
+```powershell
+Copy-Item .env.example .env
+# Replace the example passwords and JWT secret in .env.
 
-<table>
-<tr>
-<td width="50%" valign="top">
+docker compose up -d --build postgres redis api worker prometheus grafana
+docker compose exec api alembic upgrade head
 
-### Economy Core
-
-Gates, shares, intents, orders, ticks, guilds, and market events.
-
-</td>
-<td width="50%" valign="top">
-
-### Backend
-
-FastAPI service with schemas, services, tests, and Alembic migrations.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-### Frontend
-
-React/Vite app for interacting with the simulation surface.
-
-</td>
-<td width="50%" valign="top">
-
-### Invariants
-
-Conservation and market assumptions should be changed only with tests.
-
-</td>
-</tr>
-</table>
-
-## Quick Start
-
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-cd ../frontend
+Set-Location frontend
 npm install
 npm run dev
 ```
 
-## Project Structure
+Open [http://localhost:5173](http://localhost:5173). Vite proxies API and
+WebSocket traffic to [http://localhost:8000](http://localhost:8000).
 
-- backend/ - FastAPI simulation API
-- backend/app/ - schemas, services, simulation modules
-- frontend/ - Vite/React interface
-- docs/ - architecture, runbook, screenshots
+Useful endpoints:
 
-## Screenshots
+- API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+- API health: [http://localhost:8000/health](http://localhost:8000/health)
+- simulation status: [http://localhost:8000/simulation/status](http://localhost:8000/simulation/status)
+- Prometheus: [http://localhost:9090](http://localhost:9090)
+- Grafana: [http://localhost:3000](http://localhost:3000)
 
-Use `docs/screenshots/` for real screenshots when the simulation UI is ready.
+## Verify
 
-## Notes
+Create a dedicated test database once. Tests intentionally refuse to run
+against the development database.
 
-- Simulation logic and conservation invariants were not changed.
-- Migrations were not behaviorally modified.
-- Do not run database migrations as part of README cleanup.
+```powershell
+docker compose exec postgres createdb -U dge dungeon_gate_test
+docker compose exec api sh -lc 'export DATABASE_URL="${DATABASE_URL%/*}/dungeon_gate_test"; alembic upgrade head'
+docker compose exec api sh -lc 'export TEST_DATABASE_URL="${DATABASE_URL%/*}/dungeon_gate_test"; pytest -q'
+docker compose exec api ruff check app tests
+docker compose exec api mypy app
 
----
+Set-Location frontend
+npm run typecheck
+npm run build
+```
 
-<div align="center">
+If the test database already exists, the `createdb` command can be skipped.
 
-<strong>Clean docs. Clear setup. No fake screenshots.</strong>
+## Architecture
 
-</div>
+```text
+React exchange UI
+  |-- immediate reads --> FastAPI read models --> PostgreSQL
+  |-- queued writes ----> typed intents --------> deterministic cycle
+  |                                               |-- gate lifecycle
+  |                                               |-- guild lifecycle
+  |                                               |-- AI quotes
+  |                                               |-- matching/settlement
+  |                                               |-- events/news/audits
+  `-- live updates <----- WebSocket / Redis <----- cycle commit
+```
+
+The backend is authoritative for fees, escrow, holdings, risk, portfolio value,
+and all economic transfers. The client previews these values; it does not invent
+its own economy rules.
+
+Hard monetary invariant:
+
+```text
+system treasury + player balances + guild treasuries = initial seed
+```
+
+## Project map
+
+```text
+backend/app/api/          HTTP and WebSocket routes
+backend/app/services/     economy and player-facing projections
+backend/app/simulation/   deterministic cycle orchestration
+backend/app/models/       SQLAlchemy state
+backend/alembic/          schema migrations
+backend/tests/            simulation, API, security, and invariant tests
+frontend/src/features/    exchange and game screens
+frontend/src/hooks/       server-state query layer
+docs/                     architecture, rescue audit, plans, and runbook
+infra/                    monitoring and load-test assets
+```
+
+## Operator cautions
+
+- Run Alembic before starting a newly pulled worker revision.
+- Never use the development database as `TEST_DATABASE_URL`.
+- Pause the worker before high-impact database maintenance.
+- Use the admin conservation endpoint after economy-rule changes.
+- Treat `.env` as local secret material; commit only `.env.example`.

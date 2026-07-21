@@ -1,223 +1,234 @@
-import { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Coins,
+  History,
+  Info,
+  Landmark,
+  ShieldCheck,
+  Sparkles,
+  Users,
+} from "lucide-react";
+import {
+  GameEmpty,
+  GamePanel,
+  PanelHeading,
+  PlainTip,
+  RankCrest,
+  StabilityMeter,
+  StatRune,
+} from "../../components/game/GameUI";
+import ErrorAlert from "../../components/ErrorAlert";
+import LoadingSpinner from "../../components/LoadingSpinner";
 import {
   useGate,
+  useGateRankProfiles,
+  useMarketHistory,
+  useMarketPrice,
+  useMyPortfolio,
   useOrderBook,
   useTrades,
-  useMarketPrice,
 } from "../../hooks/queries";
-import { formatCurrency, formatStability, shortId } from "../../utils/format";
-import LoadingSpinner from "../../components/LoadingSpinner";
-import ErrorAlert from "../../components/ErrorAlert";
-import { GateRankBadge, GateStatusBadge } from "../../components/StatusBadge";
+import { formatCurrency, formatCurrencyCompact, shortId } from "../../utils/format";
+import GatePulse from "../market/GatePulse";
 import OrderBook from "../market/OrderBook";
-import TradeHistory from "../market/TradeHistory";
 import OrderForm from "../market/OrderForm";
+import TradeHistory from "../market/TradeHistory";
 
 export default function GateDetailPage() {
   const { gateId } = useParams<{ gateId: string }>();
-  const { data: gate, isLoading, error } = useGate(gateId || "");
-  const { data: book, isLoading: bookLoading } = useOrderBook(
-    "GATE_SHARE",
-    gateId || "",
-  );
-  const { data: trades, isLoading: tradesLoading } = useTrades(
-    "GATE_SHARE",
-    gateId || "",
-    { limit: 20 },
-  );
-  const { data: marketPrice } = useMarketPrice("GATE_SHARE", gateId || "");
-
+  const assetId = gateId ?? "";
+  const gateQuery = useGate(assetId);
+  const { data: rankProfiles } = useGateRankProfiles();
+  const bookQuery = useOrderBook("GATE_SHARE", assetId);
+  const tradesQuery = useTrades("GATE_SHARE", assetId, { limit: 20 });
+  const priceQuery = useMarketPrice("GATE_SHARE", assetId);
+  const historyQuery = useMarketHistory("GATE_SHARE", assetId, 60);
+  const portfolioQuery = useMyPortfolio();
   const [prefilledPrice, setPrefilledPrice] = useState<number | null>(null);
 
-  if (isLoading) return <LoadingSpinner />;
-  if (error || !gate)
-    return <ErrorAlert message="Gate not found or failed to load" />;
+  const gate = gateQuery.data;
+  const rankProfile = useMemo(
+    () => rankProfiles?.find((profile) => profile.rank === gate?.rank),
+    [gate?.rank, rankProfiles],
+  );
 
-  const stabClamped = Math.max(0, Math.min(100, gate.stability));
-  const stabColor =
-    stabClamped > 60
-      ? "bg-green-500"
-      : stabClamped > 30
-        ? "bg-amber-500"
-        : "bg-red-500";
+  if (gateQuery.isLoading) return <LoadingSpinner className="py-24" />;
+  if (gateQuery.error || !gate) return <ErrorAlert message="This gate could not be found in the atlas." />;
 
+  const position = portfolioQuery.data?.gate_positions.find((candidate) => candidate.gate_id === gate.id);
+  const collapseThreshold = position?.collapse_threshold ?? rankProfile?.collapse_threshold ?? 30;
+  const riskBand = position?.risk_band ?? inferRisk(gate.status, gate.stability, collapseThreshold);
+  const marketPrice = priceQuery.data;
+  const markPrice = position?.mark_price_micro ?? marketPrice?.last_price_micro ?? marketPrice?.best_ask_micro ?? marketPrice?.best_bid_micro ?? 0;
+  const visibleAskQty = bookQuery.data?.asks.reduce((sum, level) => sum + level.total_quantity, 0) ?? 0;
+  const yieldRate = markPrice > 0 ? (gate.yield_per_share_micro / markPrice) * 100 : null;
   const isCollapsed = gate.status === "COLLAPSED";
-  const visibleAskQty =
-    book?.asks.reduce((sum, level) => sum + level.total_quantity, 0) ?? 0;
+  const isEarning = gate.status === "ACTIVE";
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div>
-        <Link to="/gates" className="text-sm text-gray-400 hover:text-gray-200">
-          ← All Gates
-        </Link>
-        <h1 className="nm-page-title font-bold mt-2">Gate Market Detail</h1>
-        <p className="nm-page-subtitle mt-1">
-          Review liquidity, queue intents, and monitor holder concentration.
-        </p>
-      </div>
+    <div className="game-page gate-chamber-page">
+      <Link to="/gates" className="game-back-link"><ArrowLeft size={16} aria-hidden="true" /> Back to Gate Atlas</Link>
 
-      <div className="flex items-center gap-4">
-        <GateRankBadge rank={gate.rank} />
-        <GateStatusBadge status={gate.status} />
-        <span className="text-gray-500 text-sm font-mono">{shortId(gate.id)}</span>
-        {marketPrice?.last_price_micro && (
-          <span className="ml-auto text-sm font-mono text-brand-300">
-            Last: ¤ {formatCurrency(marketPrice.last_price_micro)}
-          </span>
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <DetailStat label="Stability">
-          <div className="flex items-center gap-2">
-            <div className="w-16 h-2.5 bg-gray-800 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full ${stabColor}`}
-                style={{ width: `${stabClamped}%` }}
-              />
-            </div>
-            <span className="font-mono text-xs">{formatStability(gate.stability)}</span>
-          </div>
-        </DetailStat>
-        <DetailStat label="Volatility">
-          <span className="font-mono text-xs">{(gate.volatility * 100).toFixed(1)}%</span>
-        </DetailStat>
-        <DetailStat label="Base Yield / tick">
-          <span className="font-mono text-xs">¤ {formatCurrency(gate.base_yield_micro)}</span>
-        </DetailStat>
-        <DetailStat label="Total Shares">
-          <span className="font-mono text-xs">{gate.total_shares}</span>
-        </DetailStat>
-      </div>
-
-      {marketPrice && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <DetailStat label="Best Bid">
-            <span className="font-mono text-xs text-green-500">
-              {marketPrice.best_bid_micro
-                ? `¤ ${formatCurrency(marketPrice.best_bid_micro)}`
-                : "-"}
-            </span>
-          </DetailStat>
-          <DetailStat label="Best Ask">
-            <span className="font-mono text-xs text-red-500">
-              {marketPrice.best_ask_micro
-                ? `¤ ${formatCurrency(marketPrice.best_ask_micro)}`
-                : "-"}
-            </span>
-          </DetailStat>
-          <DetailStat label="Last Price">
-            <span className="font-mono text-xs">
-              {marketPrice.last_price_micro
-                ? `¤ ${formatCurrency(marketPrice.last_price_micro)}`
-                : "-"}
-            </span>
-          </DetailStat>
-          <DetailStat label="Volume (24h)">
-            <span className="font-mono text-xs">
-              ¤ {formatCurrency(marketPrice.volume_24h_micro)}
-            </span>
-          </DetailStat>
+      <section className={`gate-hero gate-hero-${gate.status.toLowerCase()}`}>
+        <div className="gate-hero-portal" aria-hidden="true">
+          <span className="gate-hero-ring gate-hero-ring-one" />
+          <span className="gate-hero-ring gate-hero-ring-two" />
+          <span className="gate-hero-core"><RankCrest rank={gate.rank} size="lg" /></span>
         </div>
+        <div className="gate-hero-copy">
+          <div className="gate-hero-badges">
+            <span className="gate-ticker">{gate.ticker}</span>
+            <span className={`gate-state gate-state-${gate.status.toLowerCase()}`}>{plainStatus(gate.status)}</span>
+            <span className={`risk-word risk-${riskBand.toLowerCase()}`}>{plainRisk(riskBand)}</span>
+          </div>
+          <h1>{gate.display_name}</h1>
+          <p>{gateStatusExplanation(gate.status)}</p>
+          <StabilityMeter value={gate.stability} threshold={collapseThreshold} />
+        </div>
+        <div className="gate-hero-mark">
+          <span>One share</span>
+          <strong>{markPrice ? `¤ ${formatCurrency(markPrice)}` : "No price yet"}</strong>
+          <small>{isEarning ? `+¤ ${formatCurrency(gate.yield_per_share_micro)} income each cycle` : gate.status === "OFFERING" ? "Income begins after activation" : "This gate is not producing income"}</small>
+        </div>
+      </section>
+
+      {(priceQuery.error || portfolioQuery.error) && (
+        <ErrorAlert message="Some live market or position data is unavailable. Gate lifecycle data remains visible." />
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-          <h2 className="nm-panel-title mb-3">Order Book</h2>
-          <OrderBook
-            data={book}
-            isLoading={bookLoading}
-            onPriceClick={(p) => setPrefilledPrice(p)}
-          />
-        </div>
-
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-          <h2 className="nm-panel-title mb-3">Queue Order Intent</h2>
-          {isCollapsed ? (
-            <div className="nm-soft-note text-center py-8">
-              This gate has collapsed. Trading is permanently closed for this asset.
-            </div>
-          ) : (
-            <OrderForm
-              assetType="GATE_SHARE"
-              assetId={gate.id}
-              marketPrice={marketPrice}
-              prefilledPrice={prefilledPrice}
-              visibleAskQty={visibleAskQty}
-            />
-          )}
-        </div>
-      </div>
-
-      <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-        <h2 className="nm-panel-title mb-3">Recent Executed Trades</h2>
-        <TradeHistory data={trades} isLoading={tradesLoading} />
-      </div>
-
-      <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-        <h2 className="nm-panel-title mb-3">Shareholders</h2>
-        {gate.shareholders.length === 0 ? (
-          <div className="nm-soft-note text-center py-4">
-            No shares distributed yet. First fills appear after successful buy intents.
+      <section className="gate-chamber-grid">
+        <div className="gate-chamber-main">
+          <div className="gate-stat-grid">
+            <StatRune label="Income / share" value={isEarning ? `+¤ ${formatCurrency(gate.yield_per_share_micro)}` : "¤ 0.00"} note={isEarning ? `${yieldRate?.toFixed(2) ?? "—"}% of current price per cycle` : "Only Active gates produce income"} tone={isEarning ? "good" : "muted"} icon={<Coins size={18} />} />
+            <StatRune label="Safety buffer" value={`${Math.max(0, gate.stability - collapseThreshold).toFixed(1)} pts`} note={`Collapse line for rank ${gate.rank === "S_PLUS" ? "S+" : gate.rank}: ${collapseThreshold}%`} tone={gate.stability - collapseThreshold <= 10 ? "danger" : "aether"} icon={<ShieldCheck size={18} />} />
+            <StatRune label="Market activity" value={`¤ ${formatCurrencyCompact(marketPrice?.volume_24h_micro ?? 0)}`} note="Recent matched trade value" tone="violet" icon={<History size={18} />} />
+            <StatRune label="Shares issued" value={String(gate.total_shares)} note={`${gate.shareholders.length} disclosed holder${gate.shareholders.length === 1 ? "" : "s"}`} tone="gold" icon={<Users size={18} />} />
           </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-400 border-b border-gray-800">
-                <th className="py-2 pr-4">Holder</th>
-                <th className="py-2 pr-4">Shares</th>
-                <th className="py-2">Ownership</th>
-              </tr>
-            </thead>
-            <tbody>
-              {gate.shareholders.map((sh) => (
-                <tr key={sh.player_id} className="border-b border-gray-800/50">
-                  <td className="py-2 pr-4 font-mono text-xs">{shortId(sh.player_id)}</td>
-                  <td className="py-2 pr-4">{sh.quantity}</td>
-                  <td className="py-2">{sh.percentage.toFixed(1)}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <DetailStat label="Spawned At">
-          <span className="text-xs">Tick #{gate.spawned_at_tick}</span>
-        </DetailStat>
-        <DetailStat label="Discovery">
-          <span className="text-xs">{gate.discovery_type}</span>
-        </DetailStat>
-        {gate.collapsed_at_tick && (
-          <DetailStat label="Collapsed At">
-            <span className="text-xs text-red-500">Tick #{gate.collapsed_at_tick}</span>
-          </DetailStat>
-        )}
-        {gate.discoverer_id && (
-          <DetailStat label="Discoverer">
-            <span className="font-mono text-xs">{shortId(gate.discoverer_id)}</span>
-          </DetailStat>
-        )}
-      </div>
+          <GamePanel className="gate-chart-panel" accent="aether">
+            <PanelHeading title="Gate pulse" detail="Price movement and stability across recent world cycles." />
+            <div className="gate-chart-scroll">
+              <GatePulse
+                points={historyQuery.data?.points}
+                stability={gate.stability}
+                status={gate.status}
+                isLoading={historyQuery.isLoading}
+                hasError={Boolean(historyQuery.error)}
+              />
+            </div>
+          </GamePanel>
+
+          <GamePanel className="position-panel" accent={position ? "gold" : "muted"}>
+            <PanelHeading title="Your stake in this gate" detail="What you own, what it is worth, and what it may pay next cycle." />
+            {portfolioQuery.isLoading && <LoadingSpinner />}
+            {!portfolioQuery.isLoading && !position && (
+              <GameEmpty title="You do not own this gate" message="Use the trade ticket to buy shares, or discover a new gate to earn a finder stake." />
+            )}
+            {position && (
+              <div className="position-summary-grid">
+                <div><span>Shares owned</span><strong>{position.quantity}</strong><small>{position.ownership_pct.toFixed(2)}% of the gate</small></div>
+                <div><span>Current value</span><strong>¤ {formatCurrency(position.market_value_micro)}</strong><small>At the current mark price</small></div>
+                <div><span>Next-cycle income</span><strong className="tone-good">+¤ {formatCurrency(position.projected_yield_micro)}</strong><small>{position.status === "ACTIVE" ? "If the gate remains active" : "Currently paused by gate state"}</small></div>
+                <div><span>Best visible exit</span><strong>{position.best_bid_micro ? `¤ ${formatCurrency(position.best_bid_micro)}` : "No buyer"}</strong><small>Highest live bid per share</small></div>
+              </div>
+            )}
+          </GamePanel>
+        </div>
+
+        <aside id="trade-ticket" className="gate-trade-column">
+          <GamePanel className="gate-trade-panel" accent={isCollapsed ? "danger" : "gold"}>
+            <div className="trade-panel-heading">
+              <div><span className="game-eyebrow">Primary action</span><h2>{isCollapsed ? "Trading closed" : "Buy or sell shares"}</h2></div>
+              {!isCollapsed && <Landmark size={24} aria-hidden="true" />}
+            </div>
+            <PlainTip>
+              A buy reserves your coin; a sell reserves your shares. The order attempts to match on a world cycle.
+            </PlainTip>
+            {isCollapsed ? (
+              <div className="collapsed-tombstone"><AlertTriangle size={28} /><strong>This gate collapsed at cycle {gate.collapsed_at_tick ?? "—"}</strong><span>Its shares are permanently worthless and no new trades can be placed.</span></div>
+            ) : (
+              <OrderForm
+                assetType="GATE_SHARE"
+                assetId={gate.id}
+                marketPrice={marketPrice}
+                prefilledPrice={prefilledPrice}
+                visibleAskQty={visibleAskQty}
+              />
+            )}
+          </GamePanel>
+
+          <GamePanel className="gate-quick-read" accent="muted">
+            <PanelHeading title="Read this gate" />
+            <dl>
+              <div><dt><ArrowUp size={14} /> Best buyer</dt><dd>{marketPrice?.best_bid_micro ? `¤ ${formatCurrency(marketPrice.best_bid_micro)}` : "None"}</dd></div>
+              <div><dt><ArrowDown size={14} /> Cheapest seller</dt><dd>{marketPrice?.best_ask_micro ? `¤ ${formatCurrency(marketPrice.best_ask_micro)}` : "None"}</dd></div>
+              <div><dt><Sparkles size={14} /> Discovery</dt><dd>{plainDiscovery(gate.discovery_type)} · cycle {gate.spawned_at_tick}</dd></div>
+              <div><dt><Info size={14} /> Gate record</dt><dd>{shortId(gate.id)}</dd></div>
+            </dl>
+          </GamePanel>
+        </aside>
+      </section>
+
+      <details className="advanced-market" open={false}>
+        <summary><span><Landmark size={19} /> Advanced market data</span><small>Order book, executed trades, and ownership concentration</small></summary>
+        <div className="advanced-market-grid">
+          <GamePanel accent="aether">
+            <PanelHeading title="Live order book" detail="Select a price to copy it into the trade ticket." />
+            {bookQuery.error ? <ErrorAlert message="Order book unavailable." /> : <OrderBook data={bookQuery.data} isLoading={bookQuery.isLoading} onPriceClick={setPrefilledPrice} />}
+          </GamePanel>
+          <GamePanel accent="muted">
+            <PanelHeading title="Recent matched trades" />
+            {tradesQuery.error ? <ErrorAlert message="Trade history unavailable." /> : <TradeHistory data={tradesQuery.data} isLoading={tradesQuery.isLoading} />}
+          </GamePanel>
+          <GamePanel accent="violet" className="advanced-holders">
+            <PanelHeading title="Who owns the gate" detail={`${gate.shareholders.length} disclosed holders`} />
+            {!gate.shareholders.length ? (
+              <GameEmpty title="No player ownership yet" message="Finder stakes and completed trades will appear here." />
+            ) : (
+              <div className="holder-list">
+                {gate.shareholders.map((holder) => (
+                  <div key={holder.player_id}><span>{shortId(holder.player_id)}</span><strong>{holder.quantity} shares</strong><small>{holder.percentage.toFixed(1)}%</small></div>
+                ))}
+              </div>
+            )}
+          </GamePanel>
+        </div>
+      </details>
+
+      {!isCollapsed && <a href="#trade-ticket" className="mobile-trade-jump">Trade this gate</a>}
     </div>
   );
 }
 
-function DetailStat({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-gray-900 border border-gray-800 rounded-lg p-3">
-      <div className="nm-panel-title mb-1">{label}</div>
-      <div className="text-sm">{children}</div>
-    </div>
-  );
+function inferRisk(status: string, stability: number, threshold: number): string {
+  if (status === "COLLAPSED") return "COLLAPSED";
+  if (status === "OFFERING") return "OFFERING";
+  const buffer = stability - threshold;
+  if (buffer <= 10) return "CRITICAL";
+  if (buffer <= 30) return "WATCH";
+  return "STABLE";
 }
 
+function plainStatus(status: string) {
+  return ({ OFFERING: "Preparing", ACTIVE: "Earning", UNSTABLE: "In danger", COLLAPSED: "Collapsed" } as Record<string, string>)[status] ?? status;
+}
+function plainRisk(risk: string) {
+  return ({ STABLE: "Safe", WATCH: "Watch closely", CRITICAL: "Collapse danger", OFFERING: "Not active", COLLAPSED: "Lost" } as Record<string, string>)[risk] ?? risk;
+}
+function plainDiscovery(type: string) {
+  return ({ PLAYER: "Player expedition", SYSTEM: "World event" } as Record<string, string>)[type] ?? type.replace(/_/g, " ").toLowerCase();
+}
+function gateStatusExplanation(status: string) {
+  const copy: Record<string, string> = {
+    OFFERING: "This gate is newly discovered. Shares may trade now, but it will not produce income until it activates.",
+    ACTIVE: "This gate is producing income every completed world cycle. The opportunity lasts only while stability holds.",
+    UNSTABLE: "Income has stopped. The gate is inside its collapse corridor, so remaining share value is in serious danger.",
+    COLLAPSED: "The gate is gone. Trading is closed and all remaining shares have lost their value.",
+  };
+  return copy[status] ?? "A volatile gate-share instrument in the Obsidian Exchange.";
+}

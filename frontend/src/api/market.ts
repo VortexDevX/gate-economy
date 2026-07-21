@@ -1,9 +1,40 @@
 import client from "./client";
 import type {
+  MarketHistoryResponse,
+  MarketOverviewResponse,
   MarketPriceResponse,
   OrderBookResponse,
+  OrderPreviewRequest,
+  OrderPreviewResponse,
   TradeListResponse,
 } from "./types";
+
+export interface MarketOverviewParams {
+  status?: string;
+  rank?: string;
+  sort_by?: "VOLUME" | "YIELD" | "RISK" | "NEWEST";
+  offset?: number;
+  limit?: number;
+}
+
+export async function getMarketOverview(
+  params: MarketOverviewParams = {},
+): Promise<MarketOverviewResponse> {
+  const { data } = await client.get<MarketOverviewResponse>("/market/overview", {
+    params,
+  });
+  return data;
+}
+
+export async function previewOrder(
+  body: OrderPreviewRequest,
+): Promise<OrderPreviewResponse> {
+  const { data } = await client.post<OrderPreviewResponse>(
+    "/market/order-preview",
+    body,
+  );
+  return data;
+}
 
 export async function getMarketPrice(
   assetType: string,
@@ -38,6 +69,18 @@ export async function getTrades(
   const { data } = await client.get<TradeListResponse>(
     `/market/${assetType}/${assetId}/trades`,
     { params },
+  );
+  return data;
+}
+
+export async function getMarketHistory(
+  assetType: string,
+  assetId: string,
+  limit = 60,
+): Promise<MarketHistoryResponse> {
+  const { data } = await client.get<MarketHistoryResponse>(
+    `/market/${assetType}/${assetId}/history`,
+    { params: { limit } },
   );
   return data;
 }

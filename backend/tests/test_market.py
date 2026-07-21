@@ -4,6 +4,9 @@ Tests order placement, cancellation, matching, ISO flow,
 and conservation invariant with market operations.
 """
 
+import uuid
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy import and_, func, select
 
@@ -19,11 +22,24 @@ from app.models.gate import (
 from app.models.guild import DividendPolicy, Guild, GuildStatus
 from app.models.intent import Intent, IntentStatus, IntentType
 from app.models.ledger import AccountEntityType, EntryType
-from app.models.market import AssetType, Order, OrderSide, OrderStatus, Trade
+from app.models.market import (
+    AssetType,
+    MarketPrice,
+    Order,
+    OrderSide,
+    OrderStatus,
+    Trade,
+)
 from app.models.player import Player
+from app.models.tick import Tick
 from app.models.treasury import AccountType, SystemAccount
 from app.services.fee_calculator import calculate_escrow, calculate_fee
-from app.services.order_matching import calculate_iso_price, cancel_collapsed_gate_orders
+from app.services.order_matching import (
+    calculate_iso_price,
+    cancel_collapsed_gate_orders,
+    match_orders,
+    update_market_prices,
+)
 from app.services.transfer import transfer
 from app.simulation.tick import execute_tick
 
@@ -602,3 +618,110 @@ async def test_conservation_after_iso_trade(
         guilds = int(r.scalar_one())
 
     assert treasury + players + guilds == settings.initial_seed_micro
+
+
+@pytest.mark.asyncio
+async def test_same_price_same_tick_orders_use_id_as_stable_tie_breaker(
+    session_factory, pause_simulation, test_player_id,
+):
+    """Equal price/time bids deterministically match the smaller Order.id first."""
+    treasury_id = await _treasury_id(session_factory)
+    gate_id = await _active_gate(
+        session_factory, treasury_id, owner_id=test_player_id, qty=10
+    )
+    low_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    high_id = uuid.UUID("00000000-0000-0000-0000-000000000002")
+    price = 50_000
+    escrow, _ = calculate_escrow(1, price)
+
+    async with session_factory() as session:
+        session.add_all([
+            Order(
+                id=high_id, player_id=uuid.uuid4(),
+                asset_type=AssetType.GATE_SHARE, asset_id=gate_id,
+                side=OrderSide.BUY, quantity=1, price_limit_micro=price,
+                escrow_micro=escrow, created_at_tick=1,
+            ),
+            Order(
+                id=low_id, player_id=uuid.uuid4(),
+                asset_type=AssetType.GATE_SHARE, asset_id=gate_id,
+                side=OrderSide.BUY, quantity=1, price_limit_micro=price,
+                escrow_micro=escrow, created_at_tick=1,
+            ),
+            Order(
+                player_id=test_player_id,
+                asset_type=AssetType.GATE_SHARE, asset_id=gate_id,
+                side=OrderSide.SELL, quantity=1, price_limit_micro=price,
+                created_at_tick=1,
+            ),
+        ])
+        await session.flush()
+        await match_orders(session, 1, 1, treasury_id)
+        await session.flush()
+
+        result = await session.execute(select(Trade.buy_order_id))
+        assert result.scalar_one() == low_id
+
+
+@pytest.mark.asyncio
+async def test_market_prices_refresh_multiple_assets_set_wise(session_factory):
+    """One refresh preserves latest price, book, and rolling volume per asset."""
+    asset_a, asset_b = uuid.uuid4(), uuid.uuid4()
+    now = datetime.now(UTC)
+
+    async with session_factory() as session:
+        tick = Tick(tick_number=1, seed=1)
+        session.add(tick)
+        await session.flush()
+        session.add_all([
+            Trade(
+                buy_order_id=uuid.uuid4(), sell_order_id=uuid.uuid4(),
+                asset_type=AssetType.GATE_SHARE, asset_id=asset_a,
+                quantity=2, price_micro=10_000,
+                buyer_fee_micro=0, seller_fee_micro=0, tick_id=tick.id,
+                created_at=now - timedelta(seconds=1),
+            ),
+            Trade(
+                buy_order_id=uuid.uuid4(), sell_order_id=uuid.uuid4(),
+                asset_type=AssetType.GATE_SHARE, asset_id=asset_a,
+                quantity=3, price_micro=11_000,
+                buyer_fee_micro=0, seller_fee_micro=0, tick_id=tick.id,
+                created_at=now,
+            ),
+            Trade(
+                buy_order_id=uuid.uuid4(), sell_order_id=uuid.uuid4(),
+                asset_type=AssetType.GATE_SHARE, asset_id=asset_b,
+                quantity=4, price_micro=20_000,
+                buyer_fee_micro=0, seller_fee_micro=0, tick_id=tick.id,
+                created_at=now,
+            ),
+            Order(
+                player_id=uuid.uuid4(), asset_type=AssetType.GATE_SHARE,
+                asset_id=asset_a, side=OrderSide.BUY, quantity=1,
+                price_limit_micro=9_000, created_at_tick=1,
+            ),
+            Order(
+                player_id=uuid.uuid4(), asset_type=AssetType.GATE_SHARE,
+                asset_id=asset_a, side=OrderSide.SELL, quantity=1,
+                price_limit_micro=12_000, created_at_tick=1,
+            ),
+            Order(
+                player_id=uuid.uuid4(), asset_type=AssetType.GATE_SHARE,
+                asset_id=asset_b, side=OrderSide.BUY, quantity=1,
+                price_limit_micro=19_000, created_at_tick=1,
+            ),
+        ])
+        await session.flush()
+        await update_market_prices(session, tick_number=1, tick_id=tick.id)
+        await session.flush()
+
+        result = await session.execute(select(MarketPrice))
+        prices = {row.asset_id: row for row in result.scalars().all()}
+        assert prices[asset_a].last_price_micro == 11_000
+        assert prices[asset_a].best_bid_micro == 9_000
+        assert prices[asset_a].best_ask_micro == 12_000
+        assert prices[asset_a].volume_24h_micro == 53_000
+        assert prices[asset_b].last_price_micro == 20_000
+        assert prices[asset_b].best_bid_micro == 19_000
+        assert prices[asset_b].best_ask_micro is None
+        assert prices[asset_b].volume_24h_micro == 80_000

@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Enum, Integer, Text
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, Enum, Index, Integer, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,6 +37,9 @@ class LedgerEntry(Base):
     __tablename__ = "ledger_entries"
     __table_args__ = (
         CheckConstraint("amount_micro > 0", name="ck_ledger_amount_positive"),
+        Index("ix_ledger_debit_recent", "debit_type", "debit_id", "id"),
+        Index("ix_ledger_credit_recent", "credit_type", "credit_id", "id"),
+        Index("ix_ledger_tick", "tick_id", "id"),
     )
 
     id: Mapped[int] = mapped_column(

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db
 from app.models.event import Event, EventType
+from app.models.tick import Tick
 from app.schemas.event import EventListResponse, EventResponse
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -19,7 +20,7 @@ async def list_events(
     event_type: EventType | None = Query(None),
 ) -> EventListResponse:
     """Return paginated events, newest first."""
-    base = select(Event)
+    base = select(Event, Tick.tick_number).outerjoin(Tick, Event.tick_id == Tick.id)
     count_base = select(func.count(Event.id))
 
     if event_type is not None:
@@ -31,6 +32,11 @@ async def list_events(
 
     stmt = base.order_by(Event.created_at.desc()).limit(limit).offset(offset)
     result = await db.execute(stmt)
-    items = [EventResponse.model_validate(row) for row in result.scalars().all()]
+    items = [
+        EventResponse.model_validate(event).model_copy(
+            update={"tick_number": tick_number}
+        )
+        for event, tick_number in result.all()
+    ]
 
     return EventListResponse(items=items, total=total, limit=limit, offset=offset)

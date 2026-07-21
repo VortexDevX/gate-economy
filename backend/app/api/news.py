@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db
 from app.models.news import News, NewsCategory
+from app.models.tick import Tick
 from app.schemas.news import NewsListResponse, NewsResponse
 
 router = APIRouter(prefix="/news", tags=["news"])
@@ -20,7 +21,11 @@ async def list_news(
     min_importance: int = Query(1, ge=1, le=5),
 ) -> NewsListResponse:
     """Return paginated news, newest first."""
-    base = select(News).where(News.importance >= min_importance)
+    base = (
+        select(News, Tick.tick_number)
+        .outerjoin(Tick, News.tick_id == Tick.id)
+        .where(News.importance >= min_importance)
+    )
     count_base = select(func.count(News.id)).where(
         News.importance >= min_importance
     )
@@ -37,7 +42,10 @@ async def list_news(
     stmt = base.order_by(News.created_at.desc()).limit(limit).offset(offset)
     result = await db.execute(stmt)
     items = [
-        NewsResponse.model_validate(row) for row in result.scalars().all()
+        NewsResponse.model_validate(news).model_copy(
+            update={"tick_number": tick_number}
+        )
+        for news, tick_number in result.all()
     ]
 
     return NewsListResponse(

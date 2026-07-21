@@ -5,7 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_player, get_db
 from app.models.ledger import AccountEntityType, LedgerEntry
 from app.models.player import Player
-from app.schemas.player import LedgerEntryResponse, PaginatedLedger, PlayerResponse
+from app.schemas.player import (
+    LedgerEntryResponse,
+    PaginatedLedger,
+    PlayerResponse,
+    PortfolioResponse,
+)
+from app.services.market_read_models import build_portfolio
 
 router = APIRouter(prefix="/players", tags=["players"])
 
@@ -15,6 +21,15 @@ async def get_me(
     player: Player = Depends(get_current_player),
 ):
     return player
+
+
+@router.get("/me/portfolio", response_model=PortfolioResponse)
+async def get_my_portfolio(
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+) -> PortfolioResponse:
+    """Return marked positions, locked cash, risk, and projected gate yield."""
+    return await build_portfolio(db, player)
 
 
 @router.get("/me/ledger", response_model=PaginatedLedger)

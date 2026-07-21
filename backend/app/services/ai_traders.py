@@ -38,16 +38,26 @@ async def _cancel_ai_orders(
     tick_number: int,
     tick_id: int,
     treasury_id: uuid.UUID,
+    gate_ids: list[uuid.UUID] | None = None,
 ) -> None:
-    """Cancel all OPEN/PARTIAL orders for an AI player, releasing escrow."""
-    result = await session.execute(
-        select(Order)
-        .where(
-            Order.player_id == player_id,
-            Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
-        )
-        .with_for_update()
+    """Cancel selected AI gate orders, releasing escrow.
+
+    Direct strategy calls preserve the historical all-assets behavior when
+    ``gate_ids`` is omitted. Production passes a bounded gate batch.
+    """
+    query = select(Order).where(
+        Order.player_id == player_id,
+        Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
     )
+    if gate_ids is not None:
+        if not gate_ids:
+            return
+        query = query.where(
+            Order.asset_type == AssetType.GATE_SHARE,
+            Order.asset_id.in_(gate_ids),
+        )
+
+    result = await session.execute(query.with_for_update())
     orders = list(result.scalars().all())
 
     for order in orders:
@@ -229,20 +239,26 @@ async def run_market_maker(
     tick_id: int,
     treasury_id: uuid.UUID,
     rng: TickRNG,
+    gate_ids: list[uuid.UUID] | None = None,
 ) -> None:
     """Cancel-and-replace: place spread orders on every tradeable gate."""
-    await _cancel_ai_orders(session, player.id, tick_number, tick_id, treasury_id)
+    await _cancel_ai_orders(
+        session, player.id, tick_number, tick_id, treasury_id, gate_ids
+    )
     await session.refresh(player)
 
-    result = await session.execute(
-        select(Gate).where(
-            Gate.status.in_([
+    query = select(Gate).where(
+        Gate.status.in_([
                 GateStatus.OFFERING,
                 GateStatus.ACTIVE,
                 GateStatus.UNSTABLE,
-            ])
-        )
+        ])
     )
+    if gate_ids is not None:
+        if not gate_ids:
+            return
+        query = query.where(Gate.id.in_(gate_ids))
+    result = await session.execute(query.order_by(Gate.id))
     gates = list(result.scalars().all())
     if not gates:
         return
@@ -289,14 +305,20 @@ async def run_value_investor(
     tick_id: int,
     treasury_id: uuid.UUID,
     rng: TickRNG,
+    gate_ids: list[uuid.UUID] | None = None,
 ) -> None:
     """Buy undervalued gates, sell overvalued ones based on DCF estimate."""
-    await _cancel_ai_orders(session, player.id, tick_number, tick_id, treasury_id)
+    await _cancel_ai_orders(
+        session, player.id, tick_number, tick_id, treasury_id, gate_ids
+    )
     await session.refresh(player)
 
-    result = await session.execute(
-        select(Gate).where(Gate.status == GateStatus.ACTIVE)
-    )
+    query = select(Gate).where(Gate.status == GateStatus.ACTIVE)
+    if gate_ids is not None:
+        if not gate_ids:
+            return
+        query = query.where(Gate.id.in_(gate_ids))
+    result = await session.execute(query.order_by(Gate.id))
     gates = list(result.scalars().all())
     if not gates:
         return
@@ -369,15 +391,18 @@ async def run_noise_trader(
     tick_id: int,
     treasury_id: uuid.UUID,
     rng: TickRNG,
+    gate_ids: list[uuid.UUID] | None = None,
 ) -> None:
     """Random buy/sell with price jitter on a random active gate."""
-    await _cancel_ai_orders(session, player.id, tick_number, tick_id, treasury_id)
+    await _cancel_ai_orders(
+        session, player.id, tick_number, tick_id, treasury_id, gate_ids
+    )
     await session.refresh(player)
 
     if rng.random() >= settings.ai_noise_activity:
         return  # skip this tick
 
-    result = await session.execute(
+    query = (
         select(Gate, MarketPrice)
         .join(
             MarketPrice,
@@ -391,6 +416,11 @@ async def run_noise_trader(
             MarketPrice.last_price_micro.isnot(None),
         )
     )
+    if gate_ids is not None:
+        if not gate_ids:
+            return
+        query = query.where(Gate.id.in_(gate_ids))
+    result = await session.execute(query.order_by(Gate.id))
     rows = list(result.all())
     if not rows:
         return
@@ -434,7 +464,7 @@ async def run_ai_traders(
     treasury_id: uuid.UUID,
     rng: TickRNG,
 ) -> None:
-    """Run all AI trading strategies for this tick."""
+    """Run AI strategies for a bounded deterministic gate batch."""
     result = await session.execute(
         select(Player).where(Player.is_ai == True).with_for_update()  # noqa: E712
     )
@@ -443,20 +473,40 @@ async def run_ai_traders(
     if not ai_players:
         return
 
+    result = await session.execute(
+        select(Gate.id)
+        .where(Gate.status.in_([
+            GateStatus.OFFERING,
+            GateStatus.ACTIVE,
+            GateStatus.UNSTABLE,
+        ]))
+        .order_by(Gate.id)
+    )
+    all_gate_ids = list(result.scalars().all())
+    batch_size = max(1, settings.ai_gate_batch_size)
+    if len(all_gate_ids) <= batch_size:
+        gate_batch = all_gate_ids
+    else:
+        start = ((tick_number - 1) * batch_size) % len(all_gate_ids)
+        gate_batch = [
+            all_gate_ids[(start + offset) % len(all_gate_ids)]
+            for offset in range(batch_size)
+        ]
+
     if "ai_market_maker" in ai_players:
         await run_market_maker(
             session, ai_players["ai_market_maker"],
-            tick_number, tick_id, treasury_id, rng,
+            tick_number, tick_id, treasury_id, rng, gate_batch,
         )
 
     if "ai_value_investor" in ai_players:
         await run_value_investor(
             session, ai_players["ai_value_investor"],
-            tick_number, tick_id, treasury_id, rng,
+            tick_number, tick_id, treasury_id, rng, gate_batch,
         )
 
     if "ai_noise_trader" in ai_players:
         await run_noise_trader(
             session, ai_players["ai_noise_trader"],
-            tick_number, tick_id, treasury_id, rng,
+            tick_number, tick_id, treasury_id, rng, gate_batch,
         )

@@ -1,9 +1,11 @@
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.event import Event, EventType
+from app.models.tick import Tick
 
 
 @pytest.mark.asyncio
@@ -53,3 +55,23 @@ async def test_list_events_filter_by_type(client, session_factory):
     data = resp.json()
     assert data["total"] == 1
     assert data["items"][0]["event_type"] == "YIELD_BOOM"
+
+
+@pytest.mark.asyncio
+async def test_list_events_exposes_logical_tick_number(client, session_factory):
+    async with session_factory() as session:
+        tick = Tick(tick_number=91, seed=7, started_at=datetime.now(UTC))
+        session.add(tick)
+        await session.flush()
+        session.add(Event(
+            event_type=EventType.MARKET_SHOCK,
+            tick_id=tick.id,
+            target_id=uuid.uuid4(),
+            payload={"k": "v"},
+        ))
+        await session.commit()
+
+    resp = await client.get("/events")
+
+    assert resp.status_code == 200
+    assert resp.json()["items"][0]["tick_number"] == 91

@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from sqlalchemy import BigInteger, CheckConstraint, Enum, Float, ForeignKey, Integer
+from sqlalchemy import BigInteger, CheckConstraint, Enum, Float, ForeignKey, Index, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -55,6 +55,7 @@ class Gate(TimestampMixin, Base):
     """A dungeon gate instance — spawned by system or discovered by player."""
 
     __tablename__ = "gates"
+    __table_args__ = (Index("ix_gates_status_id", "status", "id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

@@ -1,4 +1,38 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRightLeft,
+  CalendarPlus,
+  CalendarX,
+  CheckCircle2,
+  CircleDollarSign,
+  Clock3,
+  Database,
+  FileSearch,
+  Flame,
+  Gauge,
+  Pause,
+  Play,
+  Save,
+  ShieldCheck,
+  ShieldX,
+  SlidersHorizontal,
+  Sparkles,
+  Vault,
+} from "lucide-react";
+import ErrorAlert from "../../components/ErrorAlert";
+import LoadingSpinner from "../../components/LoadingSpinner";
+import { Badge } from "../../components/StatusBadge";
+import {
+  GameButton,
+  GameEmpty,
+  GamePanel,
+  PanelHeading,
+  PlainTip,
+  ScreenHeader,
+  StatRune,
+} from "../../components/game/GameUI";
 import {
   useAdminLedger,
   useAdminParameters,
@@ -12,9 +46,6 @@ import {
   useTriggerAdminEvent,
 } from "../../hooks/queries";
 import { formatCurrency, formatDate, shortId } from "../../utils/format";
-import LoadingSpinner from "../../components/LoadingSpinner";
-import ErrorAlert from "../../components/ErrorAlert";
-import { Badge } from "../../components/StatusBadge";
 
 const EVENT_TYPES = [
   "STABILITY_SURGE",
@@ -27,8 +58,7 @@ const EVENT_TYPES = [
 export default function AdminPage() {
   const { data: sim } = useSimulationStatus();
   const { data: treasury } = useAdminTreasury();
-  const { data: parameters, isLoading: paramsLoading, error: paramsError } =
-    useAdminParameters();
+  const { data: parameters, isLoading: paramsLoading, error: paramsError } = useAdminParameters();
   const { data: audit } = useConservationAudit();
   const { data: ledger } = useAdminLedger({ limit: 50, offset: 0 });
 
@@ -43,17 +73,9 @@ export default function AdminPage() {
 
   const paramRows = useMemo(() => parameters ?? [], [parameters]);
   const adminActionPending = pause.isPending || resume.isPending || manageSeason.isPending;
-
-  const statusLabel = sim?.is_paused
-    ? "Paused"
-    : sim?.is_running
-      ? "Running"
-      : "Stopped";
-  const statusVariant = sim?.is_paused
-    ? "amber"
-    : sim?.is_running
-      ? "green"
-      : "red";
+  const statusLabel = sim?.is_paused ? "Paused" : sim?.is_running ? "Running" : "Stopped";
+  const statusVariant = sim?.is_paused ? "amber" : sim?.is_running ? "green" : "red";
+  const statusTone = sim?.is_paused ? "warn" : sim?.is_running ? "good" : "danger";
 
   const submitParam = async (e: FormEvent, key: string) => {
     e.preventDefault();
@@ -63,208 +85,355 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-5">
-      <div>
-        <h1 className="nm-page-title font-bold">Admin Control Center</h1>
-        <p className="nm-page-subtitle mt-1">
-          Simulation operations, tuning, audit checks, and season controls.
-        </p>
+    <div className="game-page admin-command-page grid gap-[18px]">
+      <ScreenHeader
+        eyebrow="World engine · Privileged command deck"
+        title="Simulation Control"
+        description="Operate world cycles, launch seasons and events, tune live rules, and verify that every coin remains accounted for. Commands here affect every player."
+      />
+
+      <div className="admin-command-warning flex items-start gap-3 border border-amber-800 bg-amber-900/15 p-3 text-sm text-amber-100">
+        <AlertTriangle size={19} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <span>Administrative actions change the shared realm. Check the current tick and conservation audit before intervening.</span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <Card label="Simulation Status">
-          <div className="flex items-center gap-2">
-            <Badge label={statusLabel} variant={statusVariant} />
-            <span className="text-xs text-gray-500">Tick #{sim?.current_tick ?? 0}</span>
-          </div>
-        </Card>
-        <Card label="Treasury Balance">
-          <span className="font-mono">¤ {formatCurrency(treasury?.balance_micro ?? 0)}</span>
-        </Card>
-        <Card label="Conservation Audit">
-          <Badge label={audit?.status ?? "UNKNOWN"} variant={audit?.status === "PASS" ? "green" : "red"} />
-        </Card>
-      </div>
+      <section className="admin-command-stats grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4" aria-label="World engine status">
+        <StatRune
+          label="World engine"
+          value={statusLabel}
+          note={`Current cycle ${sim?.current_tick ?? 0}`}
+          tone={statusTone}
+          icon={<Activity size={18} aria-hidden="true" />}
+        />
+        <StatRune
+          label="Treasury"
+          value={`¤ ${formatCurrency(treasury?.balance_micro ?? 0)}`}
+          note="System coin available to the economy"
+          tone="gold"
+          icon={<Vault size={18} aria-hidden="true" />}
+        />
+        <StatRune
+          label="Coin conservation"
+          value={audit?.status ?? "Unknown"}
+          note={audit ? `Ledger delta ¤ ${formatCurrency(Math.abs(audit.delta_micro))}` : "Audit response not yet available"}
+          tone={audit?.status === "PASS" ? "good" : "danger"}
+          icon={audit?.status === "PASS" ? <ShieldCheck size={18} aria-hidden="true" /> : <ShieldX size={18} aria-hidden="true" />}
+        />
+        <StatRune
+          label="Last completed cycle"
+          value={sim?.last_completed_at ? formatDate(sim.last_completed_at) : "Never"}
+          note={sim?.is_running ? "Engine reports active processing" : "No active worker heartbeat reported"}
+          tone="aether"
+          icon={<Clock3 size={18} aria-hidden="true" />}
+        />
+      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="nm-card rounded-xl p-4 space-y-3">
-          <h2 className="nm-panel-title">Simulation Controls</h2>
-          <div className="flex gap-3">
-            <button
+      <PlainTip>
+        Pause stops future cycle resolution; it does not erase queued player commands. Resume only after checking the ledger and active season state.
+      </PlainTip>
+
+      <div className="admin-command-controls grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <GamePanel className="admin-command-engine p-5" accent={statusTone}>
+          <PanelHeading
+            title="Engine controls"
+            detail="Pause or resume resolution of every queued player command."
+            action={<Badge label={statusLabel} variant={statusVariant} />}
+          />
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <GameButton
+              tone="danger"
               onClick={() => pause.mutate()}
               disabled={adminActionPending}
-              className="bg-amber-600 hover:bg-amber-500 text-white text-sm px-4 py-2 rounded disabled:opacity-50"
+              className="w-full"
             >
-              {pause.isPending ? "Pausing..." : "Pause"}
-            </button>
-            <button
+              <Pause size={16} aria-hidden="true" />
+              {pause.isPending ? "Pausing world…" : "Pause cycles"}
+            </GameButton>
+            <GameButton
+              tone="secondary"
               onClick={() => resume.mutate()}
               disabled={adminActionPending}
-              className="bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2 rounded disabled:opacity-50"
+              className="w-full"
             >
-              {resume.isPending ? "Resuming..." : "Resume"}
-            </button>
-            <button
+              <Play size={16} aria-hidden="true" />
+              {resume.isPending ? "Resuming world…" : "Resume cycles"}
+            </GameButton>
+          </div>
+          <p className="mt-3 text-xs text-[var(--muted)]">
+            Pause before rule changes or incident review. Resume processes commands waiting in the player action ledger.
+          </p>
+          {(pause.error || resume.error) && (
+            <div className="mt-3"><ErrorAlert message="The engine command failed. Confirm worker and API health before retrying." /></div>
+          )}
+        </GamePanel>
+
+        <GamePanel className="admin-command-season p-5" accent="violet">
+          <PanelHeading
+            title="Season lifecycle"
+            detail="Open a new competitive record or close the current one."
+            action={<Gauge size={19} className="tone-violet" aria-hidden="true" />}
+          />
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <GameButton
               onClick={() => manageSeason.mutate({ action: "create" })}
               disabled={adminActionPending}
-              className="bg-gray-900 text-sm px-4 py-2 rounded border border-gray-700 disabled:opacity-50"
+              className="w-full"
             >
-              Create Season
-            </button>
-            <button
+              <CalendarPlus size={16} aria-hidden="true" />
+              {manageSeason.isPending ? "Applying…" : "Create season"}
+            </GameButton>
+            <GameButton
+              tone="danger"
               onClick={() => manageSeason.mutate({ action: "end" })}
               disabled={adminActionPending}
-              className="bg-gray-900 text-sm px-4 py-2 rounded border border-gray-700 disabled:opacity-50"
+              className="w-full"
             >
-              End Season
-            </button>
+              <CalendarX size={16} aria-hidden="true" />
+              {manageSeason.isPending ? "Applying…" : "End season"}
+            </GameButton>
           </div>
-          {(pause.error || resume.error || manageSeason.error) && (
-            <ErrorAlert message="Admin simulation action failed." />
+          <p className="mt-3 text-xs text-[var(--muted)]">
+            Ending a season finalizes its competitive window. Creation starts a new world ranking period.
+          </p>
+          {manageSeason.error && (
+            <div className="mt-3"><ErrorAlert message="The season command failed. The existing season state was not intentionally changed." /></div>
           )}
-        </section>
-
-        <section className="nm-card rounded-xl p-4 space-y-3">
-          <h2 className="nm-panel-title">Event Trigger</h2>
-          <div className="flex gap-2">
-            <select
-              value={eventType}
-              onChange={(e) => setEventType(e.target.value)}
-              className="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm"
-            >
-              {EVENT_TYPES.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={() => triggerEvent.mutate(eventType)}
-              disabled={triggerEvent.isPending}
-              className="bg-brand-600 hover:bg-brand-500 text-white text-sm px-4 py-2 rounded disabled:opacity-50"
-            >
-              {triggerEvent.isPending ? "Triggering..." : "Trigger"}
-            </button>
-          </div>
-          {triggerEvent.error && <ErrorAlert message="Event trigger failed." />}
-          {triggerEvent.isSuccess && (
-            <div className="nm-soft-note">
-              Event queued: {triggerEvent.data?.event_type}
+          {manageSeason.isSuccess && (
+            <div className="mt-3 flex items-start gap-2 border border-green-800 bg-green-900/20 p-2 text-xs text-green-300" role="status">
+              <CheckCircle2 size={16} className="shrink-0" aria-hidden="true" />
+              <span>{manageSeason.data?.message}</span>
             </div>
           )}
-        </section>
+        </GamePanel>
+
+        <GamePanel className="admin-command-event p-5" accent="warn">
+          <PanelHeading
+            title="World event"
+            detail="Queue one realm-wide modifier for the simulation engine."
+            action={<Flame size={19} className="tone-warn" aria-hidden="true" />}
+          />
+          <label htmlFor="admin-event-type" className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">
+            Event effect
+          </label>
+          <select
+            id="admin-event-type"
+            value={eventType}
+            onChange={(e) => setEventType(e.target.value)}
+            className="mt-1.5 min-h-11 w-full px-3 py-2 text-sm"
+          >
+            {EVENT_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {plainEventName(type)}
+              </option>
+            ))}
+          </select>
+          <GameButton
+            onClick={() => triggerEvent.mutate(eventType)}
+            disabled={triggerEvent.isPending}
+            className="mt-3 w-full"
+          >
+            <Sparkles size={16} aria-hidden="true" />
+            {triggerEvent.isPending ? "Queueing event…" : "Queue world event"}
+          </GameButton>
+          <p className="mt-3 text-xs text-[var(--muted)]">The event enters the world engine and affects the shared economy when processed.</p>
+          {triggerEvent.error && (
+            <div className="mt-3"><ErrorAlert message="The world event could not be queued." /></div>
+          )}
+          {triggerEvent.isSuccess && (
+            <div className="mt-3 flex items-start gap-2 border border-green-800 bg-green-900/20 p-2 text-xs text-green-300" role="status">
+              <CheckCircle2 size={16} className="shrink-0" aria-hidden="true" />
+              <span>Queued: {plainEventName(triggerEvent.data?.event_type ?? eventType)}</span>
+            </div>
+          )}
+        </GamePanel>
       </div>
 
-      <section className="nm-card rounded-xl p-4">
-        <h2 className="nm-panel-title mb-3">Parameters</h2>
+      <GamePanel className="admin-command-parameters p-5" accent="aether">
+        <PanelHeading
+          title="Live rule parameters"
+          detail="Edit one engine value at a time. Bounds are validated by the server; changes affect future world calculations."
+          action={<SlidersHorizontal size={19} className="tone-aether" aria-hidden="true" />}
+        />
         {paramsLoading && <LoadingSpinner />}
-        {paramsError && <ErrorAlert message="Failed to load parameters." />}
+        {paramsError && <ErrorAlert message="Live simulation parameters could not be loaded." />}
         {patchParam.error && (
-          <ErrorAlert message="Parameter update failed. Check the value and bounds." />
+          <ErrorAlert message="The parameter update failed. Check the expected type and server bounds before retrying." />
         )}
-        {!paramsLoading && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+        {!paramsLoading && !paramsError && paramRows.length === 0 && (
+          <GameEmpty title="No live parameters exposed" message="The API returned no editable simulation rules." />
+        )}
+        {!paramsLoading && paramRows.length > 0 && (
+          <div className="admin-command-table overflow-x-auto">
+            <table className="min-w-[920px] text-sm">
               <thead>
-                <tr className="text-left border-b border-gray-800">
-                  <th className="py-2 pr-3">Key</th>
-                  <th className="py-2 pr-3">Current Value</th>
-                  <th className="py-2 pr-3">Type</th>
-                  <th className="py-2 pr-3">New Value</th>
-                  <th className="py-2">Action</th>
+                <tr className="border-b border-[var(--line)] text-left">
+                  <th className="py-3 pr-4">Rule</th>
+                  <th className="py-3 pr-4">Current</th>
+                  <th className="py-3 pr-4">Type</th>
+                  <th className="py-3 pr-4">Replacement value</th>
+                  <th className="py-3">Last changed</th>
                 </tr>
               </thead>
               <tbody>
-                {paramRows.map((p) => (
-                  <tr key={p.key} className="border-b border-gray-800/50">
-                    <td className="py-2 pr-3 font-mono text-xs">{p.key}</td>
-                    <td className="py-2 pr-3 font-mono">{p.value}</td>
-                    <td className="py-2 pr-3">{p.value_type}</td>
-                    <td className="py-2 pr-3">
-                      <form
-                        onSubmit={(e) => submitParam(e, p.key)}
-                        className="flex items-center gap-2"
-                      >
+                {paramRows.map((parameter) => (
+                  <tr key={parameter.key} className="border-b border-[var(--line)] align-top">
+                    <td className="py-3 pr-4">
+                      <strong className="block font-mono text-xs text-[var(--parchment)]">{parameter.key}</strong>
+                      {parameter.description && <small className="mt-1 block max-w-xs text-[10px] text-[var(--muted)]">{parameter.description}</small>}
+                    </td>
+                    <td className="py-3 pr-4 font-mono text-xs">{parameter.value}</td>
+                    <td className="py-3 pr-4"><span className="game-badge">{parameter.value_type}</span></td>
+                    <td className="py-3 pr-4">
+                      <form onSubmit={(e) => submitParam(e, parameter.key)} className="flex min-w-[260px] items-center gap-2">
+                        <label htmlFor={`admin-param-${parameter.key}`} className="sr-only">New value for {parameter.key}</label>
                         <input
-                          value={paramDrafts[p.key] ?? ""}
-                          onChange={(e) =>
-                            setParamDrafts((prev) => ({
-                              ...prev,
-                              [p.key]: e.target.value,
-                            }))
-                          }
-                          className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs"
+                          id={`admin-param-${parameter.key}`}
+                          value={paramDrafts[parameter.key] ?? ""}
+                          onChange={(e) => setParamDrafts((previous) => ({ ...previous, [parameter.key]: e.target.value }))}
+                          className="min-h-9 min-w-0 flex-1 px-2 py-1 font-mono text-xs"
+                          placeholder={parameter.value}
+                          autoComplete="off"
                         />
-                        <button
-                          type="submit"
-                          disabled={patchParam.isPending}
-                          className="text-xs px-2 py-1 rounded bg-brand-600 text-white disabled:opacity-50"
-                        >
-                          {patchParam.isPending ? "Saving..." : "Save"}
-                        </button>
+                        <GameButton type="submit" tone="secondary" disabled={patchParam.isPending || !(paramDrafts[parameter.key]?.trim())}>
+                          <Save size={14} aria-hidden="true" />
+                          {patchParam.isPending ? "Saving…" : "Apply"}
+                        </GameButton>
                       </form>
                     </td>
-                    <td className="py-2 text-xs text-gray-500">
-                      {formatDate(p.updated_at)}
-                    </td>
+                    <td className="py-3 text-xs text-[var(--muted)]">{formatDate(parameter.updated_at)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-      </section>
+      </GamePanel>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="nm-card rounded-xl p-4">
-          <h2 className="nm-panel-title mb-3">Treasury Ledger (Recent)</h2>
+      <section className="admin-command-audit grid grid-cols-1 gap-4 xl:grid-cols-[.75fr_1.25fr]" aria-label="Economy audit">
+        <GamePanel className="admin-command-conservation p-5" accent={audit?.status === "PASS" ? "good" : "danger"}>
+          <PanelHeading
+            title="Conservation ledger"
+            detail="Every coin should be held by the treasury, a player, or a guild."
+            action={audit?.status === "PASS"
+              ? <ShieldCheck size={20} className="tone-good" aria-hidden="true" />
+              : <ShieldX size={20} className="tone-danger" aria-hidden="true" />}
+          />
+          {!audit ? (
+            <LoadingSpinner />
+          ) : (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" aria-label="Coin conservation totals">
+              <AuditRow icon={<Vault />} label="Treasury" value={`¤ ${formatCurrency(audit.treasury_balance_micro)}`} />
+              <AuditRow icon={<CircleDollarSign />} label="Player balances" value={`¤ ${formatCurrency(audit.player_sum_micro)}`} />
+              <AuditRow icon={<Database />} label="Guild treasuries" value={`¤ ${formatCurrency(audit.guild_sum_micro)}`} />
+              <AuditRow icon={<ArrowRightLeft />} label="Expected total" value={`¤ ${formatCurrency(audit.expected_micro)}`} />
+              <AuditRow icon={<FileSearch />} label="Actual total" value={`¤ ${formatCurrency(audit.total_micro)}`} />
+              <AuditRow
+                icon={audit.status === "PASS" ? <ShieldCheck /> : <AlertTriangle />}
+                label="Unaccounted delta"
+                value={`¤ ${formatCurrency(audit.delta_micro)}`}
+                tone={audit.status === "PASS" ? "good" : "danger"}
+              />
+            </div>
+          )}
+        </GamePanel>
+
+        <GamePanel className="admin-command-treasury-ledger p-5" accent="gold">
+          <PanelHeading
+            title="Recent treasury movements"
+            detail="The latest debits and credits involving the system treasury."
+            action={<Vault size={19} className="tone-gold" aria-hidden="true" />}
+          />
           {!treasury && <LoadingSpinner />}
           {treasury && treasury.recent_entries.length === 0 && (
-            <div className="nm-soft-note">No treasury entries found.</div>
+            <GameEmpty title="No treasury movements" message="No recent treasury ledger entries were returned." />
           )}
           {treasury && treasury.recent_entries.length > 0 && (
-            <ul className="space-y-2">
+            <ul className="admin-command-ledger-list grid max-h-80 gap-2 overflow-auto pr-1">
               {treasury.recent_entries.slice(0, 12).map((entry) => (
-                <li key={entry.id} className="text-xs flex items-center justify-between">
-                  <span className="font-mono">#{entry.id}</span>
-                  <span>{entry.entry_type}</span>
-                  <span className="font-mono">¤ {formatCurrency(entry.amount_micro)}</span>
+                <li key={entry.id} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border border-[var(--line)] bg-black/10 p-3 text-xs">
+                  <span className="font-mono text-[var(--muted)]">#{entry.id}</span>
+                  <div className="min-w-0">
+                    <strong className="block truncate text-[var(--parchment-soft)]">{plainLedgerName(entry.entry_type)}</strong>
+                    <small className="text-[10px] text-[var(--muted)]">{entry.tick_id == null ? "Outside a world cycle" : `Cycle ${entry.tick_id}`}</small>
+                  </div>
+                  <strong className="font-mono tone-gold">¤ {formatCurrency(entry.amount_micro)}</strong>
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </GamePanel>
+      </section>
 
-        <section className="nm-card rounded-xl p-4">
-          <h2 className="nm-panel-title mb-3">Global Ledger Browser</h2>
-          {!ledger && <LoadingSpinner />}
-          {ledger && ledger.length > 0 && (
-            <ul className="space-y-2 max-h-72 overflow-auto pr-1">
-              {ledger.map((entry) => (
-                <li key={entry.id} className="text-xs border border-gray-800 rounded px-2 py-2">
-                  <div className="flex justify-between">
-                    <span>#{entry.id}</span>
-                    <span>Tick {entry.tick_id ?? "-"}</span>
-                  </div>
-                  <div className="font-mono mt-1">
-                    {shortId(entry.debit_id)} → {shortId(entry.credit_id)}
-                  </div>
-                  <div className="mt-1">{entry.entry_type} · ¤ {formatCurrency(entry.amount_micro)}</div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
+      <GamePanel className="admin-command-global-ledger p-5" accent="muted">
+        <PanelHeading
+          title="Global ledger browser"
+          detail="The newest transfers across treasury, player, and guild accounts."
+          action={<Database size={19} className="text-[var(--muted)]" aria-hidden="true" />}
+        />
+        {!ledger && <LoadingSpinner />}
+        {ledger && ledger.length === 0 && (
+          <GameEmpty title="No global transfers" message="The ledger API returned no entries for this window." />
+        )}
+        {ledger && ledger.length > 0 && (
+          <ol className="admin-command-global-list grid grid-cols-1 gap-2 lg:grid-cols-2" aria-label="Recent global ledger entries">
+            {ledger.map((entry) => (
+              <li key={entry.id} className="admin-command-global-entry grid gap-2 border border-[var(--line)] bg-black/10 p-3 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="game-badge">Ledger #{entry.id}</span>
+                  <span className="text-[var(--muted)]">{entry.tick_id == null ? "No cycle" : `Cycle ${entry.tick_id}`}</span>
+                </div>
+                <strong className="font-mono text-[var(--parchment-soft)]">
+                  {shortId(entry.debit_id)} <span className="tone-aether">→</span> {shortId(entry.credit_id)}
+                </strong>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[var(--muted)]">{plainLedgerName(entry.entry_type)}</span>
+                  <strong className="font-mono tone-gold">¤ {formatCurrency(entry.amount_micro)}</strong>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </GamePanel>
     </div>
   );
 }
 
-function Card({ label, children }: { label: string; children: React.ReactNode }) {
+function AuditRow({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  tone?: "good" | "danger";
+}) {
   return (
-    <div className="nm-card rounded-xl p-3">
-      <div className="nm-panel-title mb-1">{label}</div>
-      <div className="text-sm">{children}</div>
+    <div className="admin-command-audit-row grid grid-cols-[26px_1fr] gap-x-2 border border-[var(--line)] bg-black/10 p-3">
+      <span className={`row-span-2 ${tone ? `tone-${tone}` : "tone-aether"}`} aria-hidden="true">{icon}</span>
+      <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">{label}</span>
+      <strong className="mt-0.5 font-mono text-sm text-[var(--parchment-soft)]">{value}</strong>
     </div>
   );
+}
+
+function plainEventName(value: string): string {
+  const names: Record<string, string> = {
+    STABILITY_SURGE: "Stability surge — safer gates",
+    STABILITY_CRISIS: "Stability crisis — dangerous gates",
+    YIELD_BOOM: "Yield boom — stronger payouts",
+    MARKET_SHOCK: "Market shock — trading disruption",
+    DISCOVERY_SURGE: "Discovery surge — more gate activity",
+  };
+  return names[value] ?? sentenceCase(value);
+}
+
+function plainLedgerName(value: string): string {
+  return sentenceCase(value);
+}
+
+function sentenceCase(value: string): string {
+  const text = value.replace(/_/g, " ").toLowerCase();
+  return text ? text[0].toUpperCase() + text.slice(1) : value;
 }

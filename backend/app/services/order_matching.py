@@ -8,7 +8,7 @@ the tick's DB transaction — caller is responsible for commit.
 import uuid
 
 import structlog
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, case, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -619,40 +619,40 @@ async def match_orders(
     session: AsyncSession, tick_number: int, tick_id: int,
     treasury_id: uuid.UUID,
 ) -> None:
-    """Match buy/sell orders by price-time priority for all assets."""
+    """Match every active book after loading and locking orders set-wise."""
     result = await session.execute(
-        select(Order.asset_type, Order.asset_id).where(
-            Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL])
-        ).distinct()
+        select(Order)
+        .where(Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]))
+        .with_for_update()
     )
-    assets = result.all()
-
-    for asset_type, asset_id in assets:
-        result = await session.execute(
-            select(Order).where(and_(
-                Order.asset_type == asset_type,
-                Order.asset_id == asset_id,
-                Order.side == OrderSide.BUY,
-                Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
-            )).order_by(
-                Order.price_limit_micro.desc(),
-                Order.created_at_tick.asc(),
-            ).with_for_update()
+    books: dict[tuple[AssetType, uuid.UUID], dict[OrderSide, list[Order]]] = {}
+    for order in result.scalars().all():
+        key = (order.asset_type, order.asset_id)
+        book = books.setdefault(
+            key, {OrderSide.BUY: [], OrderSide.SELL: []}
         )
-        buys = list(result.scalars().all())
+        book[order.side].append(order)
 
-        result = await session.execute(
-            select(Order).where(and_(
-                Order.asset_type == asset_type,
-                Order.asset_id == asset_id,
-                Order.side == OrderSide.SELL,
-                Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
-            )).order_by(
-                Order.price_limit_micro.asc(),
-                Order.created_at_tick.asc(),
-            ).with_for_update()
+    for asset_type, asset_id in sorted(
+        books, key=lambda key: (key[0].value, str(key[1]))
+    ):
+        book = books[(asset_type, asset_id)]
+        buys = sorted(
+            book[OrderSide.BUY],
+            key=lambda order: (
+                -order.price_limit_micro,
+                order.created_at_tick,
+                str(order.id),
+            ),
         )
-        sells = list(result.scalars().all())
+        sells = sorted(
+            book[OrderSide.SELL],
+            key=lambda order: (
+                order.price_limit_micro,
+                order.created_at_tick,
+                str(order.id),
+            ),
+        )
 
         bi, si = 0, 0
         while bi < len(buys) and si < len(sells):
@@ -687,7 +687,7 @@ async def match_orders(
 async def update_market_prices(
     session: AsyncSession, tick_number: int, tick_id: int,
 ) -> None:
-    """Refresh market_prices for assets with trades or open orders."""
+    """Refresh touched market snapshots with set-wise aggregate queries."""
     result = await session.execute(
         select(Trade.asset_type, Trade.asset_id)
         .where(Trade.tick_id == tick_id).distinct()
@@ -700,55 +700,96 @@ async def update_market_prices(
         ).distinct()
     )
     with_orders = set(result.all())
+    touched = traded | with_orders
+    if not touched:
+        return
+    asset_pairs = list(touched)
 
-    for asset_type, asset_id in traded | with_orders:
-        r = await session.execute(
-            select(Trade.price_micro).where(and_(
-                Trade.asset_type == asset_type, Trade.asset_id == asset_id,
-            )).order_by(Trade.created_at.desc()).limit(1)
+    ranked_trades = (
+        select(
+            Trade.asset_type.label("asset_type"),
+            Trade.asset_id.label("asset_id"),
+            Trade.price_micro.label("price_micro"),
+            func.row_number().over(
+                partition_by=(Trade.asset_type, Trade.asset_id),
+                order_by=(Trade.created_at.desc(), Trade.id.desc()),
+            ).label("row_number"),
         )
-        last_price = r.scalar_one_or_none()
+        .where(tuple_(Trade.asset_type, Trade.asset_id).in_(asset_pairs))
+        .subquery()
+    )
+    result = await session.execute(
+        select(
+            ranked_trades.c.asset_type,
+            ranked_trades.c.asset_id,
+            ranked_trades.c.price_micro,
+        ).where(ranked_trades.c.row_number == 1)
+    )
+    last_prices = {
+        (asset_type, asset_id): price
+        for asset_type, asset_id, price in result.all()
+    }
 
-        r = await session.execute(
-            select(func.max(Order.price_limit_micro)).where(and_(
-                Order.asset_type == asset_type, Order.asset_id == asset_id,
-                Order.side == OrderSide.BUY,
-                Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
-            ))
+    result = await session.execute(
+        select(
+            Order.asset_type,
+            Order.asset_id,
+            func.max(case(
+                (Order.side == OrderSide.BUY, Order.price_limit_micro),
+                else_=None,
+            )).label("best_bid"),
+            func.min(case(
+                (Order.side == OrderSide.SELL, Order.price_limit_micro),
+                else_=None,
+            )).label("best_ask"),
         )
-        best_bid = r.scalar_one_or_none()
+        .where(
+            Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
+            tuple_(Order.asset_type, Order.asset_id).in_(asset_pairs),
+        )
+        .group_by(Order.asset_type, Order.asset_id)
+    )
+    book_prices = {
+        (asset_type, asset_id): (best_bid, best_ask)
+        for asset_type, asset_id, best_bid, best_ask in result.all()
+    }
 
-        r = await session.execute(
-            select(func.min(Order.price_limit_micro)).where(and_(
-                Order.asset_type == asset_type, Order.asset_id == asset_id,
-                Order.side == OrderSide.SELL,
-                Order.status.in_([OrderStatus.OPEN, OrderStatus.PARTIAL]),
-            ))
+    tick_window = max(1, 86_400 // max(1, settings.simulation_tick_interval))
+    earliest_tick = max(0, tick_number - tick_window + 1)
+    result = await session.execute(
+        select(
+            Trade.asset_type,
+            Trade.asset_id,
+            func.coalesce(func.sum(Trade.quantity * Trade.price_micro), 0),
         )
-        best_ask = r.scalar_one_or_none()
+        .join(Tick, Trade.tick_id == Tick.id)
+        .where(
+            Tick.tick_number >= earliest_tick,
+            tuple_(Trade.asset_type, Trade.asset_id).in_(asset_pairs),
+        )
+        .group_by(Trade.asset_type, Trade.asset_id)
+    )
+    volumes = {
+        (asset_type, asset_id): volume
+        for asset_type, asset_id, volume in result.all()
+    }
 
-        tick_window = max(1, 86_400 // max(1, settings.simulation_tick_interval))
-        earliest_tick = max(0, tick_number - tick_window + 1)
-        r = await session.execute(
-            select(func.coalesce(
-                func.sum(Trade.quantity * Trade.price_micro), 0
-            ))
-            .join(Tick, Trade.tick_id == Tick.id)
-            .where(and_(
-                Trade.asset_type == asset_type,
-                Trade.asset_id == asset_id,
-                Tick.tick_number >= earliest_tick,
-            ))
-        )
-        volume_24h = r.scalar_one()
+    result = await session.execute(
+        select(MarketPrice)
+        .where(tuple_(MarketPrice.asset_type, MarketPrice.asset_id).in_(asset_pairs))
+        .with_for_update()
+    )
+    market_prices = {
+        (mp.asset_type, mp.asset_id): mp for mp in result.scalars().all()
+    }
 
-        r = await session.execute(
-            select(MarketPrice).where(and_(
-                MarketPrice.asset_type == asset_type,
-                MarketPrice.asset_id == asset_id,
-            ))
-        )
-        mp = r.scalar_one_or_none()
+    for asset_type, asset_id in sorted(
+        touched, key=lambda key: (key[0].value, str(key[1]))
+    ):
+        last_price = last_prices.get((asset_type, asset_id))
+        best_bid, best_ask = book_prices.get((asset_type, asset_id), (None, None))
+        volume_24h = volumes.get((asset_type, asset_id), 0)
+        mp = market_prices.get((asset_type, asset_id))
         if mp is None:
             session.add(MarketPrice(
                 asset_type=asset_type, asset_id=asset_id,

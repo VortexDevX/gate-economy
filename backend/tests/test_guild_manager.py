@@ -17,7 +17,7 @@ from app.models.guild import (
     GuildStatus,
 )
 from app.models.intent import Intent, IntentStatus, IntentType
-from app.models.ledger import AccountEntityType, EntryType
+from app.models.ledger import AccountEntityType, EntryType, LedgerEntry
 from app.models.market import AssetType, Order, OrderSide, OrderStatus
 from app.models.player import Player
 from app.models.treasury import AccountType, SystemAccount
@@ -166,6 +166,7 @@ async def _fund_guild(sf, guild_id: uuid.UUID, amount_micro: int):
 async def test_create_guild_success_deducts_fee_and_sets_shares(session_factory, pause_simulation):
     founder_id = await _create_player_with_balance(session_factory, 120_000_000)
     before = await _balance(session_factory, founder_id)
+    treasury_id = await _treasury_id(session_factory)
 
     intent_id = await _queue_intent(
         session_factory,
@@ -184,6 +185,8 @@ async def test_create_guild_success_deducts_fee_and_sets_shares(session_factory,
     async with session_factory() as session:
         result = await session.execute(select(Guild).where(Guild.name == "Alpha"))
         guild = result.scalar_one()
+        guild_id = guild.id
+        guild_treasury = guild.treasury_micro
         result = await session.execute(
             select(GuildMember.role).where(
                 GuildMember.guild_id == guild.id,
@@ -205,13 +208,84 @@ async def test_create_guild_success_deducts_fee_and_sets_shares(session_factory,
             )
         )
         float_qty = result.scalar_one()
+        result = await session.execute(
+            select(LedgerEntry).where(
+                LedgerEntry.entry_type == EntryType.GUILD_CREATION,
+                LedgerEntry.debit_id == founder_id,
+            )
+        )
+        creation_entries = list(result.scalars())
 
+    expected_capital = int(
+        settings.guild_creation_cost_micro * settings.guild_starting_capital_pct
+    )
+    expected_fee = settings.guild_creation_cost_micro - expected_capital
     assert founder_qty == 700
     assert float_qty == 300
+    assert guild_treasury == expected_capital
+    assert {
+        (entry.credit_type, entry.credit_id, entry.amount_micro) for entry in creation_entries
+    } == {
+        (AccountEntityType.GUILD, guild_id, expected_capital),
+        (AccountEntityType.SYSTEM, treasury_id, expected_fee),
+    }
     assert (
         await _balance(session_factory, founder_id)
         == before - settings.guild_creation_cost_micro
     )
+
+
+@pytest.mark.asyncio
+async def test_new_guild_grace_defers_maintenance_and_auto_dividend(
+    session_factory, pause_simulation
+):
+    with _settings(
+        guild_starting_capital_pct=0.80,
+        guild_operating_grace_ticks=1,
+        guild_base_maintenance_micro=100_000,
+        guild_maintenance_scale=0.0,
+    ):
+        founder_id = await _create_player_with_balance(session_factory, 120_000_000)
+        founder_before = await _balance(session_factory, founder_id)
+        await _queue_intent(
+            session_factory,
+            founder_id,
+            IntentType.CREATE_GUILD,
+            {
+                "name": "GraceGuild",
+                "public_float_pct": 0.0,
+                "dividend_policy": "AUTO_FIXED_PCT",
+                "auto_dividend_pct": 0.10,
+            },
+        )
+
+        await execute_tick(session_factory)
+
+        expected_capital = int(
+            settings.guild_creation_cost_micro * settings.guild_starting_capital_pct
+        )
+        async with session_factory() as session:
+            result = await session.execute(select(Guild).where(Guild.name == "GraceGuild"))
+            guild = result.scalar_one()
+            guild_id = guild.id
+            assert guild.treasury_micro == expected_capital
+            assert guild.missed_maintenance_ticks == 0
+        assert await _balance(session_factory, founder_id) == (
+            founder_before - settings.guild_creation_cost_micro
+        )
+
+        await execute_tick(session_factory)
+
+        capital_after_maintenance = expected_capital - settings.guild_base_maintenance_micro
+        expected_dividend = int(capital_after_maintenance * 0.10)
+        async with session_factory() as session:
+            result = await session.execute(
+                select(Guild.treasury_micro).where(Guild.id == guild_id)
+            )
+            assert result.scalar_one() == (capital_after_maintenance - expected_dividend)
+        assert await _balance(session_factory, founder_id) == (
+            founder_before - settings.guild_creation_cost_micro + expected_dividend
+        )
 
 
 @pytest.mark.asyncio
@@ -240,11 +314,15 @@ async def test_create_guild_duplicate_name_rejected(session_factory, pause_simul
 
 @pytest.mark.asyncio
 async def test_create_guild_insufficient_balance_rejected(
-    session_factory, pause_simulation, funded_player_id
+    session_factory, pause_simulation
 ):
+    founder_id = await _create_player_with_balance(
+        session_factory, settings.guild_creation_cost_micro - 1
+    )
+    before = await _balance(session_factory, founder_id)
     intent_id = await _queue_intent(
         session_factory,
-        funded_player_id,
+        founder_id,
         IntentType.CREATE_GUILD,
         {"name": "Poor", "public_float_pct": 0.2, "dividend_policy": "MANUAL"},
     )
@@ -252,6 +330,17 @@ async def test_create_guild_insufficient_balance_rejected(
     intent = await _get_intent(session_factory, intent_id)
     assert intent.status == IntentStatus.REJECTED
     assert "Insufficient balance" in (intent.reject_reason or "")
+    assert await _balance(session_factory, founder_id) == before
+    async with session_factory() as session:
+        result = await session.execute(select(Guild).where(Guild.name == "Poor"))
+        assert result.scalar_one_or_none() is None
+        result = await session.execute(
+            select(func.count(LedgerEntry.id)).where(
+                LedgerEntry.entry_type == EntryType.GUILD_CREATION,
+                LedgerEntry.debit_id == founder_id,
+            )
+        )
+        assert result.scalar_one() == 0
 
 
 @pytest.mark.asyncio
@@ -350,7 +439,11 @@ async def test_manual_dividend_non_leader_rejected(session_factory, pause_simula
 
 @pytest.mark.asyncio
 async def test_auto_dividend_runs_each_tick(session_factory, pause_simulation):
-    with _settings(guild_base_maintenance_micro=1, guild_maintenance_scale=0.0):
+    with _settings(
+        guild_starting_capital_pct=0.0,
+        guild_base_maintenance_micro=1,
+        guild_maintenance_scale=0.0,
+    ):
         founder_id = await _create_player_with_balance(session_factory, 120_000_000)
         await _queue_intent(
             session_factory,
@@ -451,7 +544,11 @@ async def test_guild_invest_matches_gate_iso_and_receives_holdings(
 
 @pytest.mark.asyncio
 async def test_guild_receives_yield_from_gate_holdings(session_factory, pause_simulation):
-    with _settings(guild_base_maintenance_micro=1, guild_maintenance_scale=0.0):
+    with _settings(
+        guild_starting_capital_pct=0.0,
+        guild_base_maintenance_micro=1,
+        guild_maintenance_scale=0.0,
+    ):
         founder_id = await _create_player_with_balance(session_factory, 120_000_000)
         gate_id = await _create_active_gate(
             session_factory, total_shares=100, base_yield_micro=10_000
@@ -482,7 +579,11 @@ async def test_guild_receives_yield_from_gate_holdings(session_factory, pause_si
 
 @pytest.mark.asyncio
 async def test_insolvent_guild_gets_yield_penalty(session_factory, pause_simulation):
-    with _settings(guild_base_maintenance_micro=1, guild_maintenance_scale=0.0):
+    with _settings(
+        guild_starting_capital_pct=0.0,
+        guild_base_maintenance_micro=1,
+        guild_maintenance_scale=0.0,
+    ):
         founder_id = await _create_player_with_balance(session_factory, 120_000_000)
         gate_id = await _create_active_gate(
             session_factory, total_shares=100, base_yield_micro=10_000
@@ -524,6 +625,7 @@ async def test_insolvency_and_dissolution_cancel_open_orders(
     with _settings(
         guild_insolvency_threshold=2,
         guild_dissolution_threshold=3,
+        guild_starting_capital_pct=0.0,
         guild_base_maintenance_micro=100_000,
         guild_maintenance_scale=0.0,
     ):
@@ -534,7 +636,7 @@ async def test_insolvency_and_dissolution_cancel_open_orders(
             IntentType.CREATE_GUILD,
             {"name": "DecayGuild", "public_float_pct": 0.30, "dividend_policy": "MANUAL"},
         )
-        await execute_tick(session_factory)  # tick 1 (missed=1)
+        await execute_tick(session_factory)  # tick 1: operating grace
         assert (await _get_intent(session_factory, create_intent)).status == IntentStatus.EXECUTED
 
         async with session_factory() as session:
@@ -554,11 +656,12 @@ async def test_insolvency_and_dissolution_cancel_open_orders(
                 "price_limit_micro": 1_000,
             },
         )
-        await execute_tick(session_factory)  # tick 2 -> guild insolvent, order open
+        await execute_tick(session_factory)  # tick 2: missed=1, order open
         assert (await _get_intent(session_factory, buy_intent)).status == IntentStatus.EXECUTED
 
-        await execute_tick(session_factory)  # tick 3
-        await execute_tick(session_factory)  # tick 4 -> dissolution expected
+        await execute_tick(session_factory)  # tick 3 -> guild insolvent
+        await execute_tick(session_factory)  # tick 4
+        await execute_tick(session_factory)  # tick 5 -> dissolution expected
 
         async with session_factory() as session:
             result = await session.execute(select(Guild.status).where(Guild.id == guild_id))

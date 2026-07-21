@@ -35,3 +35,54 @@ class PaginatedLedger(BaseModel):
     total: int
     page: int
     size: int
+
+
+class GatePositionResponse(BaseModel):
+    gate_id: uuid.UUID
+    ticker: str
+    display_name: str
+    rank: str
+    status: str
+    quantity: int
+    total_shares: int
+    ownership_pct: float
+    stability: float
+    collapse_threshold: float
+    base_yield_micro: int
+    effective_yield_micro: int
+    projected_yield_micro: int
+    mark_price_micro: int
+    market_value_micro: int
+    best_bid_micro: int | None
+    best_ask_micro: int | None
+    volume_24h_micro: int
+    risk_band: str
+
+
+class GuildPositionResponse(BaseModel):
+    guild_id: uuid.UUID
+    name: str
+    status: str
+    quantity: int
+    total_shares: int
+    ownership_pct: float
+    treasury_micro: int
+    mark_price_micro: int
+    market_value_micro: int
+    best_bid_micro: int | None
+    best_ask_micro: int | None
+    volume_24h_micro: int
+
+
+class PortfolioResponse(BaseModel):
+    as_of_tick: int
+    cash_balance_micro: int
+    reserved_cash_micro: int
+    gate_value_micro: int
+    guild_value_micro: int
+    portfolio_value_micro: int
+    net_worth_micro: int
+    projected_yield_per_tick_micro: int
+    unstable_exposure_micro: int
+    gate_positions: list[GatePositionResponse]
+    guild_positions: list[GuildPositionResponse]

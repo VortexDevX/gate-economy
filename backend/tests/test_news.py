@@ -177,3 +177,23 @@ async def test_news_api_filter_importance(client, session_factory):
     data = resp.json()
     assert data["total"] == 1
     assert data["items"][0]["headline"] == "Major"
+
+
+@pytest.mark.asyncio
+async def test_news_api_exposes_logical_tick_number(client, session_factory):
+    async with session_factory() as session:
+        tick = Tick(tick_number=77, seed=42, started_at=datetime.now(UTC))
+        session.add(tick)
+        await session.flush()
+        session.add(News(
+            tick_id=tick.id,
+            headline="Cycle-linked news",
+            category=NewsCategory.MARKET,
+            importance=3,
+        ))
+        await session.commit()
+
+    resp = await client.get("/news")
+
+    assert resp.status_code == 200
+    assert resp.json()["items"][0]["tick_number"] == 77

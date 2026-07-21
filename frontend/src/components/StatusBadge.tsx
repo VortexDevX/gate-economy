@@ -8,66 +8,9 @@ type Variant =
   | "orange"
   | "yellow";
 
-const variantStyles: Record<
-  Variant,
-  { background: string; border: string; color: string }
-> = {
-  green: {
-    background: "rgba(56, 193, 114, 0.14)",
-    border: "rgba(56, 193, 114, 0.48)",
-    color: "var(--nm-good)",
-  },
-  blue: {
-    background: "rgba(57, 208, 162, 0.12)",
-    border: "rgba(57, 208, 162, 0.42)",
-    color: "var(--nm-accent)",
-  },
-  amber: {
-    background: "rgba(241, 179, 71, 0.16)",
-    border: "rgba(241, 179, 71, 0.46)",
-    color: "var(--nm-warn)",
-  },
-  red: {
-    background: "rgba(241, 104, 88, 0.14)",
-    border: "rgba(241, 104, 88, 0.48)",
-    color: "var(--nm-bad)",
-  },
-  gray: {
-    background: "rgba(184, 165, 131, 0.12)",
-    border: "rgba(184, 165, 131, 0.36)",
-    color: "var(--nm-muted)",
-  },
-  purple: {
-    background: "rgba(141, 108, 255, 0.15)",
-    border: "rgba(141, 108, 255, 0.44)",
-    color: "#b9a7ff",
-  },
-  orange: {
-    background: "rgba(217, 152, 62, 0.16)",
-    border: "rgba(217, 152, 62, 0.48)",
-    color: "var(--nm-primary-soft)",
-  },
-  yellow: {
-    background: "rgba(255, 218, 112, 0.18)",
-    border: "rgba(255, 218, 112, 0.5)",
-    color: "#ffd66b",
-  },
-};
-
 export function Badge({ label, variant }: { label: string; variant: Variant }) {
-  const style = variantStyles[variant];
   return (
-    <span
-      className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full border"
-      style={{
-        background: style.background,
-        borderColor: style.border,
-        color: style.color,
-        boxShadow: "inset 0 1px 0 rgba(255, 232, 178, 0.12)",
-      }}
-    >
-      {label}
-    </span>
+    <span className={`game-badge game-badge-${variant}`}>{label.replace(/_/g, " ")}</span>
   );
 }
 

@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,6 +27,14 @@ class IntentStatus(str, enum.Enum):
 
 class Intent(Base):
     __tablename__ = "intents"
+    __table_args__ = (
+        Index(
+            "ix_intents_queued_created",
+            "created_at",
+            "id",
+            postgresql_where=text("status = 'QUEUED'"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

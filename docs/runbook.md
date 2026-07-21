@@ -1,129 +1,140 @@
-# Dungeon Gate Economy — Runbook
+# Dungeon Gate Economy — Operator Runbook
 
 ## Prerequisites
 
-- Docker Desktop
-- `make`
-- Optional local tools for convenience: `curl`, `jq`
+- Docker Desktop with Compose v2
+- Node.js 20+ and npm for the frontend
+- a local `.env` copied from `.env.example`
 
-## Services and Ports
+## Services
 
-- API: `http://localhost:8000`
-- Postgres host port: `5433`
-- Redis host port: `6380`
-- Prometheus: `http://localhost:9090`
-- Grafana: `http://localhost:3000`
+| Service | Local address |
+| --- | --- |
+| Exchange UI | `http://localhost:5173` |
+| FastAPI | `http://localhost:8000` |
+| PostgreSQL | `127.0.0.1:5433` |
+| Redis | `127.0.0.1:6380` |
+| Prometheus | `http://localhost:9090` |
+| Grafana | `http://localhost:3000` |
 
-## Start / Stop
+## Start
 
-```bash
-make up
-make down
+```powershell
+Copy-Item .env.example .env
+# Replace example secrets before continuing.
+docker compose up -d --build
+docker compose exec api alembic upgrade head
+
+Set-Location frontend
+npm install
+npm run dev
 ```
 
-`make up` boots API, worker, Postgres, Redis, Prometheus, Grafana.
+The frontend is intentionally run through Vite during development; it proxies
+API and WebSocket traffic to the API container.
 
-## Health Checks
+## Health
 
-```bash
-curl http://localhost:8000/health
-curl http://localhost:8000/ready
-curl http://localhost:8000/simulation/status
+```powershell
+Invoke-RestMethod http://localhost:8000/health
+Invoke-RestMethod http://localhost:8000/ready
+Invoke-RestMethod http://localhost:8000/simulation/status
+docker compose ps
 ```
 
-## Database Migrations
+## Database migrations
 
-```bash
-make migrate
-make migration msg="describe change"
-```
-
-If migration order drifts, inspect:
-
-```bash
+```powershell
 docker compose exec api alembic current
 docker compose exec api alembic history
+docker compose exec api alembic upgrade head
+docker compose exec api alembic revision --autogenerate -m "describe change"
 ```
 
-## Test Commands
+For a migration on a busy local simulation, stop only the worker, migrate, and
+restart it:
 
-```bash
-make test
-docker compose exec api pytest -q
-docker compose exec api pytest tests/test_admin.py -q
+```powershell
+docker compose stop worker
+docker compose exec api alembic upgrade head
+docker compose start worker
 ```
 
-## Lint / Type Check
+## Database browser (Prisma Studio)
 
-```bash
-make lint
+SQLAlchemy models and Alembic migrations remain the schema source of truth.
+Prisma Studio can be used as a local browser without adding Prisma to the app:
+
+```powershell
+$urlLine = Get-Content .env | Where-Object { $_ -match '^DATABASE_URL=' } | Select-Object -First 1
+$containerUrl = ($urlLine -split '=', 2)[1].Trim().Trim('"').Trim("'")
+$studioUrl = $containerUrl -replace '^postgresql\+asyncpg://', 'postgresql://' -replace '@postgres:5432/', '@127.0.0.1:5433/'
+npx --yes prisma@latest studio --url="$studioUrl" --port 5555
 ```
 
-## Logs and Debug
+Open `http://localhost:5555`. Keep `SEED_AI_PLAYERS_ON_STARTUP=false` for a
+user-free baseline; set it to `true` and restart the API only when the three AI
+liquidity accounts are wanted.
 
-```bash
-make logs
-docker compose logs -f api
+## Tests
+
+The backend test guard must reject the development database. Create and migrate
+an isolated database once:
+
+```powershell
+docker compose exec postgres createdb -U dge dungeon_gate_test
+docker compose exec api sh -lc 'export DATABASE_URL="${DATABASE_URL%/*}/dungeon_gate_test"; alembic upgrade head'
+```
+
+Run all verification:
+
+```powershell
+docker compose exec api sh -lc 'export TEST_DATABASE_URL="${DATABASE_URL%/*}/dungeon_gate_test"; pytest -q'
+docker compose exec api ruff check app tests
+docker compose exec api mypy app
+
+Set-Location frontend
+npm run typecheck
+npm run build
+```
+
+## Logs
+
+```powershell
+docker compose logs --tail 200 api
+docker compose logs --tail 200 worker
 docker compose logs -f worker
 ```
 
-## Interactive Shells
+Cycle completion and duration are emitted by the worker. Repeated cycle times
+above `SIMULATION_TICK_INTERVAL` are a performance failure, even if the worker
+continues to make progress.
 
-```bash
-make shell
-docker compose exec api bash
-docker compose exec api python -m pytest -q
+## Admin controls
+
+These calls require an admin access token:
+
+```powershell
+$headers = @{ Authorization = "Bearer <ADMIN_ACCESS_TOKEN>" }
+Invoke-RestMethod -Method Post http://localhost:8000/admin/simulation/pause -Headers $headers
+Invoke-RestMethod -Method Post http://localhost:8000/admin/simulation/resume -Headers $headers
+Invoke-RestMethod http://localhost:8000/admin/audit/conservation -Headers $headers
 ```
+
+The conservation response should report `PASS` with a zero delta.
 
 ## Observability
 
-- Metrics endpoint: `GET /metrics`
-- Prometheus target should include API container at 5s scrape interval.
-- Grafana default credentials:
-  - user: `admin`
-  - pass: `admin`
+- FastAPI metrics: `GET /metrics`
+- Prometheus scrapes the API container every five seconds.
+- Grafana credentials come from `GF_SECURITY_ADMIN_USER` and
+  `GRAFANA_ADMIN_PASSWORD`; do not rely on default passwords.
 
-## Pause / Resume Simulation (Admin API)
+## Stop and recover
 
-Requires admin JWT.
-
-```bash
-curl -X POST http://localhost:8000/admin/simulation/pause \
-  -H "Authorization: Bearer <ADMIN_ACCESS_TOKEN>"
-
-curl -X POST http://localhost:8000/admin/simulation/resume \
-  -H "Authorization: Bearer <ADMIN_ACCESS_TOKEN>"
+```powershell
+docker compose down
+docker compose up -d
 ```
 
-## Conservation Audit
-
-```bash
-curl http://localhost:8000/admin/audit/conservation \
-  -H "Authorization: Bearer <ADMIN_ACCESS_TOKEN>"
-```
-
-Expected response includes `status` (`PASS`/`FAIL`) and `delta_micro`.
-
-## Load Test Harness (k6)
-
-Scripts in `infra/k6`:
-- `auth_load.js`
-- `order_storm.js`
-- `ws_connections.js`
-- `mixed_workload.js`
-
-Example:
-
-```bash
-docker run --rm -i --network host \
-  -v ${PWD}/infra/k6:/scripts \
-  grafana/k6 run /scripts/mixed_workload.js
-```
-
-## Reset
-
-```bash
-make reset
-```
-
-Use only when you want a full local rebuild (containers + volumes).
+Do not add `--volumes` unless permanent local database deletion is intentional.

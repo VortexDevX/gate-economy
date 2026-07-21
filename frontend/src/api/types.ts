@@ -66,10 +66,14 @@ export interface SimulationStatus {
 
 export interface GateResponse {
   id: string;
+  ticker: string;
+  display_name: string;
   rank: string;
   stability: number;
   volatility: number;
   base_yield_micro: number;
+  effective_yield_micro: number;
+  yield_per_share_micro: number;
   total_shares: number;
   status: string;
   spawned_at_tick: number;
@@ -105,6 +109,57 @@ export interface GateRankProfileResponse {
   collapse_threshold: number;
   discovery_cost_micro: number;
   spawn_weight: number;
+}
+
+export interface GatePositionResponse {
+  gate_id: string;
+  ticker: string;
+  display_name: string;
+  rank: string;
+  status: string;
+  quantity: number;
+  total_shares: number;
+  ownership_pct: number;
+  stability: number;
+  collapse_threshold: number;
+  base_yield_micro: number;
+  effective_yield_micro: number;
+  projected_yield_micro: number;
+  mark_price_micro: number;
+  market_value_micro: number;
+  best_bid_micro: number | null;
+  best_ask_micro: number | null;
+  volume_24h_micro: number;
+  risk_band: string;
+}
+
+export interface GuildPositionResponse {
+  guild_id: string;
+  name: string;
+  status: string;
+  quantity: number;
+  total_shares: number;
+  ownership_pct: number;
+  treasury_micro: number;
+  mark_price_micro: number;
+  market_value_micro: number;
+  best_bid_micro: number | null;
+  best_ask_micro: number | null;
+  volume_24h_micro: number;
+}
+
+export interface PortfolioResponse {
+  as_of_tick: number;
+  cash_balance_micro: number;
+  reserved_cash_micro: number;
+  gate_value_micro: number;
+  guild_value_micro: number;
+  portfolio_value_micro: number;
+  net_worth_micro: number;
+  projected_yield_per_tick_micro: number;
+  unstable_exposure_micro: number;
+  gate_positions: GatePositionResponse[];
+  guild_positions: GuildPositionResponse[];
 }
 
 // --- Guilds ---
@@ -168,6 +223,25 @@ export interface OrderBookResponse {
   asks: OrderBookEntry[];
 }
 
+export interface OrderPreviewRequest {
+  asset_type: string;
+  asset_id: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+  price_limit_micro: number;
+}
+
+export interface OrderPreviewResponse {
+  gross_value_micro: number;
+  estimated_fee_micro: number;
+  fee_rate_bps: number;
+  required_escrow_micro: number;
+  available_cash_micro: number;
+  available_shares: number;
+  can_submit: boolean;
+  reason: string | null;
+}
+
 export interface TradeResponse {
   id: string;
   buy_order_id: string;
@@ -179,6 +253,7 @@ export interface TradeResponse {
   buyer_fee_micro: number;
   seller_fee_micro: number;
   tick_id: number;
+  tick_number: number | null;
 }
 
 export interface TradeListResponse {
@@ -224,6 +299,59 @@ export interface IntentResponse {
   processed_tick: number | null;
 }
 
+export interface MarketAssetResponse {
+  asset_id: string;
+  ticker: string;
+  display_name: string;
+  rank: string;
+  status: string;
+  stability: number;
+  collapse_threshold: number;
+  distance_to_instability: number;
+  risk_band: string;
+  total_shares: number;
+  base_yield_micro: number;
+  effective_yield_micro: number;
+  yield_per_share_micro: number;
+  mark_price_micro: number;
+  yield_rate_bps_per_tick: number | null;
+  last_price_micro: number | null;
+  best_bid_micro: number | null;
+  best_ask_micro: number | null;
+  spread_bps: number | null;
+  volume_24h_micro: number;
+  updated_at_tick: number;
+  spawned_at_tick: number;
+  discovery_type: string;
+}
+
+export interface MarketOverviewResponse {
+  items: MarketAssetResponse[];
+  total: number;
+  active_count: number;
+  offering_count: number;
+  unstable_count: number;
+  collapsed_count: number;
+}
+
+export interface MarketHistoryPoint {
+  tick_number: number;
+  open_micro: number;
+  high_micro: number;
+  low_micro: number;
+  close_micro: number;
+  average_price_micro: number;
+  volume_quantity: number;
+  volume_micro: number;
+  trade_count: number;
+}
+
+export interface MarketHistoryResponse {
+  asset_type: string;
+  asset_id: string;
+  points: MarketHistoryPoint[];
+}
+
 export interface IntentListResponse {
   items: IntentResponse[];
   total: number;
@@ -234,6 +362,7 @@ export interface IntentListResponse {
 export interface NewsResponse {
   id: string;
   tick_id: number;
+  tick_number: number | null;
   headline: string;
   body: string | null;
   category: string;
@@ -255,6 +384,7 @@ export interface NewsListResponse {
 export interface EventResponse {
   id: string;
   tick_id: number;
+  tick_number: number | null;
   event_type: string;
   severity: string;
   target_type: string | null;

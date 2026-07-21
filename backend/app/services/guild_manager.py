@@ -105,20 +105,6 @@ async def process_create_guild(
 
     try:
         async with session.begin_nested():
-            # Charge creation fee
-            await transfer(
-                session=session,
-                from_type=AccountEntityType.PLAYER,
-                from_id=intent.player_id,
-                to_type=AccountEntityType.SYSTEM,
-                to_id=treasury_id,
-                amount=settings.guild_creation_cost_micro,
-                entry_type=EntryType.GUILD_CREATION,
-                memo=f"Guild creation: {name}",
-                tick_id=tick_id,
-            )
-
-            # Create guild record
             total_shares = settings.guild_total_shares
             guild = Guild(
                 name=name,
@@ -138,6 +124,40 @@ async def process_create_guild(
             )
             session.add(guild)
             await session.flush()
+
+            # Split the unchanged creation cost between productive guild capital
+            # and a founding fee. Both legs remain explicit ledger transfers.
+            creation_cost = settings.guild_creation_cost_micro
+            starting_capital_pct = max(
+                0.0, min(1.0, settings.guild_starting_capital_pct)
+            )
+            starting_capital = int(creation_cost * starting_capital_pct)
+            founding_fee = creation_cost - starting_capital
+
+            if starting_capital > 0:
+                await transfer(
+                    session=session,
+                    from_type=AccountEntityType.PLAYER,
+                    from_id=intent.player_id,
+                    to_type=AccountEntityType.GUILD,
+                    to_id=guild.id,
+                    amount=starting_capital,
+                    entry_type=EntryType.GUILD_CREATION,
+                    memo=f"Guild starting capital: {name}",
+                    tick_id=tick_id,
+                )
+            if founding_fee > 0:
+                await transfer(
+                    session=session,
+                    from_type=AccountEntityType.PLAYER,
+                    from_id=intent.player_id,
+                    to_type=AccountEntityType.SYSTEM,
+                    to_id=treasury_id,
+                    amount=founding_fee,
+                    entry_type=EntryType.GUILD_CREATION,
+                    memo=f"Guild founding fee: {name}",
+                    tick_id=tick_id,
+                )
 
             # Membership
             session.add(GuildMember(
@@ -182,6 +202,8 @@ async def process_create_guild(
         name=name,
         founder_shares=founder_shares,
         float_shares=float_shares,
+        starting_capital=starting_capital,
+        founding_fee=founding_fee,
     )
 
 
@@ -394,6 +416,9 @@ async def guild_maintenance(
     guilds = list(result.scalars().all())
 
     for guild in guilds:
+        if _in_operating_grace(guild, tick_number):
+            continue
+
         # Calculate cost = base + scaled on gate holding value
         h_result = await session.execute(
             select(GuildGateHolding).where(
@@ -490,6 +515,8 @@ async def auto_dividends(
     guilds = list(result.scalars().all())
 
     for guild in guilds:
+        if _in_operating_grace(guild, tick_number):
+            continue
         if guild.treasury_micro <= 0 or guild.auto_dividend_pct is None:
             continue
         amount = int(guild.treasury_micro * float(guild.auto_dividend_pct))
@@ -499,6 +526,11 @@ async def auto_dividends(
 
 
 # ── Internal helpers ──
+
+
+def _in_operating_grace(guild: Guild, tick_number: int) -> bool:
+    """Return whether recurring guild operations are still deferred."""
+    return tick_number - guild.created_at_tick < settings.guild_operating_grace_ticks
 
 
 async def _distribute_dividend(

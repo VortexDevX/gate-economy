@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class EventResponse(BaseModel):
     id: UUID
     tick_id: int
+    tick_number: int | None = None
     event_type: str
     severity: str
     target_type: str | None

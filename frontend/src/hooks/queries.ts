@@ -9,7 +9,11 @@ import {
 } from "../api/gates";
 import { listNews, type NewsListParams } from "../api/news";
 import { listEvents, type EventListParams } from "../api/events";
-import { getMyLedger, type LedgerParams } from "../api/players";
+import {
+  getMyLedger,
+  getMyPortfolio,
+  type LedgerParams,
+} from "../api/players";
 import { listGuilds, getGuild, type GuildListParams } from "../api/guilds";
 import {
   getLeaderboard,
@@ -22,9 +26,13 @@ import {
   type SeasonResultsParams,
 } from "../api/leaderboard";
 import {
+  getMarketHistory,
+  getMarketOverview,
   getMarketPrice,
   getOrderBook,
+  previewOrder,
   getTrades,
+  type MarketOverviewParams,
   type TradeListParams,
 } from "../api/market";
 import { getMyOrders, type OrderListParams } from "../api/orders";
@@ -45,16 +53,17 @@ import {
   triggerAdminEvent,
   type AdminLedgerParams,
 } from "../api/admin";
-import type { IntentCreate } from "../api/types";
+import type { IntentCreate, OrderPreviewRequest } from "../api/types";
 
 // --- Player ---
 
-export function useMe() {
+export function useMe(enabled = true) {
   return useQuery({
     queryKey: ["players", "me"],
     queryFn: getMe,
+    enabled,
     staleTime: 10_000,
-    refetchInterval: 10_000,
+    refetchInterval: enabled ? 10_000 : false,
   });
 }
 
@@ -144,7 +153,33 @@ export function useMyLedger(params: LedgerParams = {}) {
   });
 }
 
+export function useMyPortfolio() {
+  return useQuery({
+    queryKey: ["players", "me", "portfolio"],
+    queryFn: getMyPortfolio,
+    refetchInterval: 10_000,
+  });
+}
+
 // --- Market ---
+
+export function useMarketOverview(params: MarketOverviewParams = {}) {
+  return useQuery({
+    queryKey: ["market", "overview", params],
+    queryFn: () => getMarketOverview(params),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useOrderPreview(preview: OrderPreviewRequest | null) {
+  return useQuery({
+    queryKey: ["market", "order-preview", preview],
+    queryFn: () => previewOrder(preview as OrderPreviewRequest),
+    enabled: preview !== null,
+    staleTime: 1_000,
+    retry: false,
+  });
+}
 
 export function useMarketPrice(assetType: string, assetId: string) {
   return useQuery({
@@ -192,6 +227,19 @@ export function useMyIntents(params: IntentListParams = {}) {
     queryKey: ["intents", "me", params],
     queryFn: () => getMyIntents(params),
     refetchInterval: 5_000,
+  });
+}
+
+export function useMarketHistory(
+  assetType: string,
+  assetId: string,
+  limit = 60,
+) {
+  return useQuery({
+    queryKey: ["market", "history", assetType, assetId, limit],
+    queryFn: () => getMarketHistory(assetType, assetId, limit),
+    enabled: !!assetType && !!assetId,
+    refetchInterval: 10_000,
   });
 }
 
@@ -249,20 +297,9 @@ export function useSubmitIntent() {
   return useMutation({
     mutationFn: (intent: IntentCreate) => submitIntent(intent),
     onSuccess: () => {
-      // Immediate invalidation (balance may change from escrow)
-      queryClient.invalidateQueries({ queryKey: ["players", "me"] });
-
-      // Delayed invalidations — give the next tick time to process the intent
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ["orders", "me"] });
-        queryClient.invalidateQueries({ queryKey: ["intents", "me"] });
-        queryClient.invalidateQueries({ queryKey: ["players", "me"] });
-        queryClient.invalidateQueries({ queryKey: ["market"] });
-        queryClient.invalidateQueries({ queryKey: ["gates"] });
-        queryClient.invalidateQueries({ queryKey: ["guilds"] });
-        queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
-        queryClient.invalidateQueries({ queryKey: ["seasons"] });
-      }, 6_000);
+      // Accepted intents are visible immediately. Economic state remains
+      // server-authoritative and refreshes on the actual tick event or polling.
+      queryClient.invalidateQueries({ queryKey: ["intents", "me"] });
     },
   });
 }

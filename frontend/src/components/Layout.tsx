@@ -1,151 +1,267 @@
-import { Outlet, Link, NavLink, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  Aperture,
+  BookOpen,
+  ChevronRight,
+  CircleUserRound,
+  Compass,
+  Crown,
+  DoorOpen,
+  History,
+  LogOut,
+  Menu,
+  Moon,
+  Newspaper,
+  Radio,
+  ReceiptText,
+  Shield,
+  Sparkles,
+  Sun,
+  Trophy,
+  WalletCards,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { useMyPortfolio, useSimulationStatus } from "../hooks/queries";
 import { useAuthStore } from "../stores/auth";
-import { useThemeStore } from "../stores/theme";
 import { useRealtimeStore } from "../stores/realtime";
+import { useThemeStore } from "../stores/theme";
 import { formatCurrency } from "../utils/format";
 
-const navItems = [
-  { to: "/dashboard", label: "Dashboard", icon: "dashboard" },
-  { to: "/gates", label: "Gates", icon: "castle" },
-  { to: "/discover", label: "Discover", icon: "explore" },
-  { to: "/orders", label: "Orders", icon: "receipt_long" },
-  { to: "/guilds", label: "Guilds", icon: "groups" },
-  { to: "/leaderboard", label: "Leaderboard", icon: "leaderboard" },
-  { to: "/news", label: "News", icon: "newspaper" },
-  { to: "/events", label: "Events", icon: "event" },
-  { to: "/profile", label: "Profile", icon: "person" },
-  { to: "/admin", label: "Admin", icon: "admin_panel_settings", adminOnly: true },
+interface NavItem {
+  to: string;
+  label: string;
+  shortLabel: string;
+  icon: LucideIcon;
+  adminOnly?: boolean;
+}
+
+const primaryNavigation: NavItem[] = [
+  { to: "/dashboard", label: "Command Chamber", shortLabel: "Command", icon: Compass },
+  { to: "/discover", label: "Launch Expedition", shortLabel: "Discover", icon: Sparkles },
+  { to: "/gates", label: "Gate Atlas", shortLabel: "Gates", icon: Aperture },
+  { to: "/guilds", label: "Guild Hall", shortLabel: "Guilds", icon: Shield },
+  { to: "/leaderboard", label: "Season Crown", shortLabel: "Season", icon: Trophy },
+];
+
+const secondaryNavigation: NavItem[] = [
+  { to: "/orders", label: "Orders & Results", shortLabel: "Orders", icon: ReceiptText },
+  { to: "/news", label: "World Dispatches", shortLabel: "Dispatches", icon: Newspaper },
+  { to: "/events", label: "Active Omens", shortLabel: "Events", icon: Radio },
+  { to: "/profile", label: "Hunter Chronicle", shortLabel: "Profile", icon: CircleUserRound },
+  { to: "/guide", label: "How to Play", shortLabel: "Guide", icon: BookOpen },
+  { to: "/admin", label: "Keeper Console", shortLabel: "Admin", icon: Crown, adminOnly: true },
 ];
 
 export default function Layout() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { player, logout } = useAuthStore();
-  const mode = useThemeStore((s) => s.mode);
-  const toggleMode = useThemeStore((s) => s.toggleMode);
-  const connectionState = useRealtimeStore((s) => s.connectionState);
+  const mode = useThemeStore((state) => state.mode);
+  const toggleMode = useThemeStore((state) => state.toggleMode);
+  const connectionState = useRealtimeStore((state) => state.connectionState);
+  const { data: simulation } = useSimulationStatus();
+  const { data: portfolio } = useMyPortfolio();
   const navigate = useNavigate();
-  const visibleNavItems = navItems.filter((item) =>
+  const queryClient = useQueryClient();
+
+  const secondaries = secondaryNavigation.filter((item) =>
     item.adminOnly ? player?.role === "ADMIN" : true,
   );
+  const worldOnline = simulation?.is_running && !simulation?.is_paused;
+  const firstQuestComplete = (portfolio?.gate_positions.length ?? 0) > 0;
 
   const handleLogout = () => {
     logout();
-    navigate("/login");
+    queryClient.clear();
+    navigate("/login", { replace: true });
   };
 
   return (
-    <div className="min-h-screen">
-      <nav className="hidden md:flex fixed left-0 top-0 h-full w-[260px] nm-sidebar px-4 py-8 flex-col z-40">
-        <Link to="/dashboard" className="flex items-center gap-3 min-w-0 px-2 mb-8">
-          <span className="dge-brand-mark shrink-0">
-            DG
-          </span>
-          <span className="min-w-0">
-            <span className="block text-lg font-semibold whitespace-nowrap overflow-hidden text-ellipsis">
-              Dungeon Gate
-            </span>
-            <span className="block nm-soft-note text-xs font-mono uppercase">
-              Economy Node v1.0.4
-            </span>
-          </span>
-        </Link>
+    <div className="game-shell">
+      <aside className="game-sidebar" aria-label="Primary navigation">
+        <BrandLockup />
 
-        <div className="flex flex-col gap-1 overflow-y-auto">
-          {visibleNavItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `nm-nav-item text-sm transition-colors ${
-                  isActive ? "nm-nav-item-active" : "nm-nav-item-idle"
-                }`
-              }
-            >
-              <span className="material-symbols-rounded text-xl">{item.icon}</span>
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
-        </div>
-      </nav>
+        <nav className="game-nav" aria-label="Play">
+          <div className="game-nav-label">Play</div>
+          {primaryNavigation.map((item) => <DesktopNavItem key={item.to} item={item} />)}
+        </nav>
 
-      <header className="fixed top-0 left-0 md:left-[260px] right-0 h-16 nm-topbar px-4 md:px-8 flex items-center justify-between gap-3 z-30">
-        <Link to="/dashboard" className="md:hidden flex items-center gap-2 min-w-0">
-          <span className="dge-brand-mark dge-brand-mark-sm shrink-0">DG</span>
-          <span className="font-semibold truncate">Dungeon Gate</span>
-        </Link>
-        <div className="hidden md:flex items-center gap-3">
-          <span className="text-xs px-3 py-1.5 rounded-full border border-gray-700 bg-gray-900 inline-flex items-center gap-2 font-mono uppercase">
-            <span className="dge-status-dot" />
-            WS {connectionState}
-          </span>
-        </div>
+        <nav className="game-nav game-nav-secondary" aria-label="Field kit">
+          <div className="game-nav-label">Field kit</div>
+          {secondaries.map((item) => <DesktopNavItem key={item.to} item={item} />)}
+        </nav>
 
-        {player && (
-          <div className="flex items-center justify-end gap-2 md:gap-4 min-w-0">
-            <span className="md:hidden text-xs px-2 py-1 rounded-full border border-gray-700 bg-gray-900 inline-flex items-center gap-2">
-              <span className="dge-status-dot" />
-              WS
-            </span>
-            <span className="hidden sm:inline text-sm text-gray-400 truncate max-w-36">
-              {player.username}
-            </span>
-            {player.role === "ADMIN" && (
-              <span
-                className="hidden lg:inline text-xs px-2 py-0.5 rounded-full border"
-                style={{
-                  background: "rgba(241, 104, 88, 0.14)",
-                  borderColor: "rgba(241, 104, 88, 0.5)",
-                  color: "var(--nm-bad)",
-                }}
-              >
-                ADMIN
-              </span>
-            )}
-            <div className="text-sm font-mono text-brand-300 whitespace-nowrap px-3 py-1.5 border border-gray-800 bg-gray-900 rounded inline-flex items-center gap-1.5">
-              <span className="material-symbols-rounded text-base">account_balance_wallet</span>
-              ¤ {formatCurrency(player.balance_micro)}
-            </div>
-            <button
-              onClick={toggleMode}
-              className="text-sm text-gray-500 hover:text-gray-200 transition-colors px-2.5 py-1.5 rounded-md inline-flex items-center gap-1 border border-gray-800 bg-gray-900"
-              title="Toggle theme"
-            >
-              <span className="material-symbols-rounded text-sm">
-                {mode === "dark" ? "light_mode" : "dark_mode"}
-              </span>
-              <span className="hidden sm:inline">{mode === "dark" ? "Light" : "Dark"}</span>
-            </button>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-gray-500 hover:text-gray-200 transition-colors px-3 py-1.5 rounded-md border border-gray-800 bg-gray-900"
-            >
-              Logout
-            </button>
+        <Link to={firstQuestComplete ? "/profile" : "/discover"} className="sidebar-quest">
+          <div className="sidebar-quest-head">
+            <span>Current quest</span>
+            <span>{firstQuestComplete ? "2/4" : "0/4"}</span>
           </div>
-        )}
+          <strong>{firstQuestComplete ? "Build your first position" : "Find your first gate"}</strong>
+          <p>
+            {firstQuestComplete
+              ? "Inspect your holding, then decide whether to hold for yield or trade."
+              : "Start with an E-rank expedition. It is the cheapest way into the economy."}
+          </p>
+          <span className="sidebar-quest-action">
+            {firstQuestComplete ? "View chronicle" : "Begin expedition"}
+            <ChevronRight size={14} aria-hidden="true" />
+          </span>
+        </Link>
+      </aside>
+
+      <header className="game-topbar">
+        <div className="game-topbar-left">
+          <button
+            className="game-icon-button game-mobile-menu-button"
+            onClick={() => setMobileMenuOpen(true)}
+            aria-label="Open navigation"
+          >
+            <Menu size={20} aria-hidden="true" />
+          </button>
+          <Link to="/dashboard" className="game-mobile-brand" aria-label="Obsidian Exchange home">
+            <span className="brand-sigil brand-sigil-small"><Aperture size={19} aria-hidden="true" /></span>
+            <span>OBSIDIAN EXCHANGE</span>
+          </Link>
+          <div className={`world-state ${worldOnline ? "world-state-live" : "world-state-offline"}`}>
+            <span className="world-state-dot" aria-hidden="true" />
+            <span>{worldOnline ? "World live" : "World halted"}</span>
+            <strong>Cycle {simulation?.current_tick ?? 0}</strong>
+          </div>
+        </div>
+
+        <div className="game-resources" aria-label="Player resources">
+          <div className="resource-chip resource-chip-worth">
+            <History size={15} aria-hidden="true" />
+            <span>Worth</span>
+            <strong>¤ {formatCurrency(portfolio?.net_worth_micro ?? player?.balance_micro ?? 0)}</strong>
+          </div>
+          <div className="resource-chip">
+            <WalletCards size={15} aria-hidden="true" />
+            <span>Coin</span>
+            <strong>¤ {formatCurrency(portfolio?.cash_balance_micro ?? player?.balance_micro ?? 0)}</strong>
+          </div>
+          <div
+            className={`connection-rune connection-${connectionState}`}
+            title={`World feed: ${connectionState}`}
+            role="img"
+            aria-label={`World feed ${connectionState}`}
+          >
+            <Radio size={16} aria-hidden="true" />
+          </div>
+          <button
+            onClick={toggleMode}
+            className="game-icon-button game-theme-button"
+            aria-label={`Switch to ${mode === "dark" ? "torchlight" : "void"} theme`}
+          >
+            {mode === "dark" ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
+          </button>
+          <button onClick={handleLogout} className="game-icon-button" aria-label="Leave the exchange">
+            <LogOut size={17} aria-hidden="true" />
+          </button>
+        </div>
       </header>
 
-      <div className="md:hidden fixed top-16 left-0 right-0 nm-mobile-nav px-3 py-2 flex gap-2 overflow-x-auto z-30">
-          {visibleNavItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `flex items-center gap-1 px-3 py-2 text-xs rounded-lg whitespace-nowrap border ${
-                  isActive
-                    ? "text-brand-700 bg-brand-100 border-brand-200"
-                    : "text-gray-500 bg-gray-900 border-gray-800"
-                }`
-              }
-            >
-              <span className="material-symbols-rounded text-sm">{item.icon}</span>
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
-      </div>
+      {!worldOnline && (
+        <div className="world-halted-banner" role="status">
+          <DoorOpen size={17} aria-hidden="true" />
+          <strong>The world engine is halted.</strong>
+          <span>Orders and expeditions can be prepared, but nothing resolves until the simulation worker starts.</span>
+        </div>
+      )}
 
-      <main className="relative z-10 pt-32 md:pt-24 pb-8 px-4 md:px-8 md:ml-[260px]">
+      <main className={`game-stage ${!worldOnline ? "game-stage-with-banner" : ""}`}>
         <Outlet />
       </main>
+
+      <nav className="game-mobile-dock" aria-label="Mobile play navigation">
+        {primaryNavigation.slice(0, 4).map((item) => <MobileNavItem key={item.to} item={item} />)}
+        <button onClick={() => setMobileMenuOpen(true)} className="game-mobile-dock-item">
+          <Menu size={20} aria-hidden="true" />
+          <span>More</span>
+        </button>
+      </nav>
+
+      {mobileMenuOpen && (
+        <div className="mobile-drawer-layer" role="presentation" onClick={() => setMobileMenuOpen(false)}>
+          <section
+            className="mobile-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation menu"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mobile-drawer-head">
+              <BrandLockup compact />
+              <button className="game-icon-button" onClick={() => setMobileMenuOpen(false)} aria-label="Close navigation">
+                <X size={20} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="mobile-drawer-player">
+              <span>{player?.username ?? "Hunter"}</span>
+              <strong>¤ {formatCurrency(portfolio?.cash_balance_micro ?? player?.balance_micro ?? 0)}</strong>
+            </div>
+            <nav className="mobile-drawer-nav">
+              {[...primaryNavigation, ...secondaries].map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === "/dashboard"}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={({ isActive }) => `mobile-drawer-link ${isActive ? "is-active" : ""}`}
+                >
+                  <item.icon size={19} aria-hidden="true" />
+                  <span>{item.label}</span>
+                  <ChevronRight size={15} aria-hidden="true" />
+                </NavLink>
+              ))}
+            </nav>
+            <button className="mobile-drawer-logout" onClick={handleLogout}>
+              <LogOut size={18} aria-hidden="true" /> Leave exchange
+            </button>
+          </section>
+        </div>
+      )}
     </div>
+  );
+}
+
+function BrandLockup({ compact = false }: { compact?: boolean }) {
+  return (
+    <Link to="/dashboard" className={`game-brand ${compact ? "game-brand-compact" : ""}`}>
+      <span className="brand-sigil"><Aperture size={25} aria-hidden="true" /></span>
+      <span>
+        <strong>Dungeon Gate</strong>
+        <small>The Obsidian Exchange</small>
+      </span>
+    </Link>
+  );
+}
+
+function DesktopNavItem({ item }: { item: NavItem }) {
+  return (
+    <NavLink
+      to={item.to}
+      end={item.to === "/dashboard"}
+      className={({ isActive }) => `game-nav-item ${isActive ? "is-active" : ""}`}
+    >
+      <item.icon size={18} aria-hidden="true" />
+      <span>{item.label}</span>
+      <i aria-hidden="true" />
+    </NavLink>
+  );
+}
+
+function MobileNavItem({ item }: { item: NavItem }) {
+  return (
+    <NavLink
+      to={item.to}
+      end={item.to === "/dashboard"}
+      className={({ isActive }) => `game-mobile-dock-item ${isActive ? "is-active" : ""}`}
+    >
+      <item.icon size={20} aria-hidden="true" />
+      <span>{item.shortLabel}</span>
+    </NavLink>
   );
 }

@@ -1,6 +1,5 @@
-import { useState, useEffect, type FormEvent } from "react";
-import { useSubmitIntent } from "../../hooks/queries";
-import { useAuthStore } from "../../stores/auth";
+import { useState, useEffect, useId, type FormEvent } from "react";
+import { useOrderPreview, useSubmitIntent } from "../../hooks/queries";
 import { formatCurrency } from "../../utils/format";
 import type { MarketPriceResponse } from "../../api/types";
 
@@ -19,8 +18,9 @@ export default function OrderForm({
   prefilledPrice,
   visibleAskQty = 0,
 }: Props) {
-  const player = useAuthStore((s) => s.player);
   const submitIntent = useSubmitIntent();
+  const quantityInputId = useId();
+  const priceInputId = useId();
 
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [quantity, setQuantity] = useState("1");
@@ -47,10 +47,20 @@ export default function OrderForm({
     ? Math.round(parseFloat(priceStr) * 1_000_000)
     : 0;
   const qty = parseInt(quantity, 10) || 0;
-  const totalMicro = priceMicro * qty;
-
-  // UI cannot see live admin fee tuning; backend performs final escrow validation.
-  const estFeeMicro = Math.round(totalMicro * 0.005);
+  const previewInput =
+    priceMicro > 0 && qty > 0
+      ? {
+          asset_type: assetType,
+          asset_id: assetId,
+          side,
+          quantity: qty,
+          price_limit_micro: priceMicro,
+        }
+      : null;
+  const { data: preview, isFetching: previewLoading } =
+    useOrderPreview(previewInput);
+  const totalMicro = preview?.gross_value_micro ?? priceMicro * qty;
+  const estFeeMicro = preview?.estimated_fee_micro ?? 0;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -65,17 +75,10 @@ export default function OrderForm({
       setErrorMsg("Price must be greater than 0");
       return;
     }
-    if (side === "BUY" && player && player.balance_micro < totalMicro) {
-      setErrorMsg("Insufficient balance for order cost before fees.");
+    if (preview && !preview.can_submit) {
+      setErrorMsg(preview.reason || "Order cannot be submitted");
       return;
     }
-    if (side === "BUY" && visibleAskQty > 0 && qty > visibleAskQty) {
-      setErrorMsg(
-        `Requested quantity exceeds visible asks (${visibleAskQty}). Reduce quantity or wait for more liquidity.`,
-      );
-      return;
-    }
-
     try {
       const intent = await submitIntent.mutateAsync({
         intent_type: "PLACE_ORDER",
@@ -104,11 +107,15 @@ export default function OrderForm({
       : (marketPrice?.best_bid_micro ?? marketPrice?.last_price_micro);
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-3"
+      aria-label={`${side === "BUY" ? "Buy" : "Sell"} order ticket`}
+    >
       {/* Info note */}
       <div className="text-xs text-gray-500 bg-gray-800/30 rounded px-3 py-2">
         Submitting here queues an intent. The engine validates and executes it on
-        the next simulation tick (~5s).
+        the next completed simulation cycle.
       </div>
 
       {/* Side toggle */}
@@ -116,6 +123,7 @@ export default function OrderForm({
         <button
           type="button"
           onClick={() => setSide("BUY")}
+          aria-pressed={side === "BUY"}
           className={`flex-1 py-2 text-sm font-medium transition-colors ${
             side === "BUY"
               ? "bg-green-900/50 text-green-300"
@@ -127,6 +135,7 @@ export default function OrderForm({
         <button
           type="button"
           onClick={() => setSide("SELL")}
+          aria-pressed={side === "SELL"}
           className={`flex-1 py-2 text-sm font-medium transition-colors ${
             side === "SELL"
               ? "bg-red-900/50 text-red-300"
@@ -139,10 +148,14 @@ export default function OrderForm({
 
       {/* Quantity */}
       <div>
-        <label className="block text-xs text-gray-400 mb-1">
+        <label
+          htmlFor={quantityInputId}
+          className="block text-xs text-gray-400 mb-1"
+        >
           Quantity (shares)
         </label>
         <input
+          id={quantityInputId}
           type="number"
           min="1"
           value={quantity}
@@ -155,7 +168,9 @@ export default function OrderForm({
       {/* Price */}
       <div>
         <div className="flex items-center justify-between mb-1">
-          <label className="text-xs text-gray-400">Price per share (¤)</label>
+          <label htmlFor={priceInputId} className="text-xs text-gray-400">
+            Price per share (¤)
+          </label>
           {suggestedPrice && (
             <button
               type="button"
@@ -170,6 +185,7 @@ export default function OrderForm({
           )}
         </div>
         <input
+          id={priceInputId}
           type="number"
           step="0.000001"
           min="0.000001"
@@ -195,31 +211,41 @@ export default function OrderForm({
             <span className="font-mono">¤ {formatCurrency(totalMicro)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-400">Min. Fee Est.</span>
+            <span className="text-gray-400">
+              {preview
+                ? `Engine Fee (${(preview.fee_rate_bps / 100).toFixed(2)}%)`
+                : "Calculating engine fee"}
+            </span>
             <span className="font-mono text-gray-500">
-              ¤ {formatCurrency(estFeeMicro)}
+              {previewLoading ? "…" : `¤ ${formatCurrency(estFeeMicro)}`}
             </span>
           </div>
           {side === "BUY" && (
             <div className="flex justify-between border-t border-gray-700 pt-1">
               <span className="text-gray-400">Est. Escrow</span>
               <span className="font-mono">
-                ¤ {formatCurrency(totalMicro + estFeeMicro)}
+                ¤ {formatCurrency(preview?.required_escrow_micro ?? totalMicro)}
               </span>
             </div>
           )}
-          {player && side === "BUY" && (
+          {preview && side === "BUY" && (
             <div className="flex justify-between">
-              <span className="text-gray-400">Your Balance</span>
+              <span className="text-gray-400">Available Cash</span>
               <span
                 className={`font-mono ${
-                  player.balance_micro < totalMicro
+                  !preview.can_submit
                     ? "text-red-400"
                     : "text-gray-300"
                 }`}
               >
-                ¤ {formatCurrency(player.balance_micro)}
+                ¤ {formatCurrency(preview.available_cash_micro)}
               </span>
+            </div>
+          )}
+          {preview && side === "SELL" && (
+            <div className="flex justify-between">
+              <span className="text-gray-400">Available Shares</span>
+              <span className="font-mono">{preview.available_shares}</span>
             </div>
           )}
         </div>
@@ -228,21 +254,34 @@ export default function OrderForm({
       {/* Messages */}
       {side === "BUY" && visibleAskQty > 0 && (
         <div className="text-xs text-gray-400 bg-gray-800/40 border border-gray-700 rounded px-3 py-2">
-          Visible ask liquidity: {visibleAskQty} shares
+          Visible ask liquidity: {visibleAskQty} shares. Larger limit orders may
+          rest on the book until sellers arrive.
         </div>
       )}
-      {side === "BUY" && priceMicro > 0 && qty > 0 && (
+      {preview?.reason && (
+        <div className="text-xs text-red-400 bg-red-900/20 border border-red-800 rounded px-3 py-2">
+          {preview.reason}
+        </div>
+      )}
+      {side === "BUY" && preview && (
         <div className="text-xs text-gray-400 bg-gray-800/40 border border-gray-700 rounded px-3 py-2">
-          Progressive fees are finalized by the engine on the next tick; orders can still fail if escrow is short.
+          Fee and escrow use current live engine parameters. A larger limit order
+          may rest on the book instead of filling immediately.
         </div>
       )}
       {errorMsg && (
-        <div className="bg-red-900/30 border border-red-800 text-red-300 text-xs rounded px-3 py-2">
+        <div
+          role="alert"
+          className="bg-red-900/30 border border-red-800 text-red-300 text-xs rounded px-3 py-2"
+        >
           {errorMsg}
         </div>
       )}
       {successMsg && (
-        <div className="bg-green-900/30 border border-green-800 text-green-300 text-xs rounded px-3 py-2">
+        <div
+          role="status"
+          className="bg-green-900/30 border border-green-800 text-green-300 text-xs rounded px-3 py-2"
+        >
           {successMsg}
         </div>
       )}
@@ -250,7 +289,11 @@ export default function OrderForm({
       {/* Submit */}
       <button
         type="submit"
-        disabled={submitIntent.isPending}
+        disabled={
+          submitIntent.isPending ||
+          previewLoading ||
+          (preview !== undefined && !preview.can_submit)
+        }
         className={`w-full font-medium py-2 px-4 rounded text-sm transition-colors disabled:opacity-50 ${
           side === "BUY"
             ? "bg-green-700 hover:bg-green-600 text-white"

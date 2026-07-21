@@ -10,6 +10,7 @@ from app.config import settings
 from app.models.gate import DiscoveryType, Gate, GateRank, GateShare, GateStatus
 from app.models.intent import Intent, IntentStatus, IntentType
 from app.models.ledger import AccountEntityType, EntryType
+from app.models.market import AssetType, Order, OrderSide, OrderStatus
 from app.models.player import Player
 from app.models.treasury import AccountType, SystemAccount
 from app.services.gate_lifecycle import (
@@ -173,6 +174,29 @@ async def test_player_discovery_creates_gate(session_factory, pause_simulation):
         gate = result.scalar_one()
         assert gate.discovery_type.value == "PLAYER"
         assert gate.status == GateStatus.OFFERING
+
+        result = await session.execute(
+            select(GateShare).where(GateShare.gate_id == gate.id)
+        )
+        shares = {share.player_id: share.quantity for share in result.scalars()}
+        expected_finder_shares = int(
+            gate.total_shares * settings.player_discovery_finder_share_pct
+        )
+        expected_treasury_shares = gate.total_shares - expected_finder_shares
+        assert shares[player.id] == expected_finder_shares
+        assert shares[treasury.id] == expected_treasury_shares
+        assert sum(shares.values()) == gate.total_shares
+
+        result = await session.execute(
+            select(Order).where(
+                Order.asset_type == AssetType.GATE_SHARE,
+                Order.asset_id == gate.id,
+                Order.player_id == treasury.id,
+                Order.side == OrderSide.SELL,
+                Order.status == OrderStatus.OPEN,
+            )
+        )
+        assert result.scalar_one().quantity == expected_treasury_shares
 
         result = await session.execute(
             select(Player.balance_micro).where(Player.id == player.id)

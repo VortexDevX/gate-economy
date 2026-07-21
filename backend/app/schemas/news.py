@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class NewsResponse(BaseModel):
     id: UUID
     tick_id: int
+    tick_number: int | None = None
     headline: str
     body: str | None
     category: str

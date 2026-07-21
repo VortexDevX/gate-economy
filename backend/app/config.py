@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     system_spawn_probability: float = 0.15   # chance per tick of system gate spawn
     gate_offering_ticks: int = 60            # ticks in OFFERING before ACTIVE
     gate_base_decay_rate: float = 0.1        # base stability decay per tick
+    player_discovery_finder_share_pct: float = 0.10  # finder stake in discovered gate
 
     # ── Market Fees ──
     base_fee_rate: float = 0.005             # 0.5% minimum fee rate
@@ -39,8 +40,10 @@ class Settings(BaseSettings):
 
     # ── Guild Settings ──
     guild_creation_cost_micro: int = 50_000_000       # 50 currency
+    guild_starting_capital_pct: float = 0.80  # creation cost retained by guild
     guild_total_shares: int = 1000
     guild_max_float_pct: float = 0.49
+    guild_operating_grace_ticks: int = 1  # no maintenance/dividend drain
     guild_base_maintenance_micro: int = 100_000       # 0.1 currency per tick
     guild_maintenance_scale: float = 0.001
     guild_insolvency_threshold: int = 3               # missed ticks → INSOLVENT
@@ -48,6 +51,7 @@ class Settings(BaseSettings):
     guild_liquidation_discount: float = 0.50
 
     # ── AI Trader Settings ──
+    seed_ai_players_on_startup: bool = False
     ai_market_maker_budget_micro: int = 2_000_000_000   # 2,000 currency
     ai_value_investor_budget_micro: int = 1_000_000_000  # 1,000 currency
     ai_noise_trader_budget_micro: int = 500_000_000      # 500 currency
@@ -57,6 +61,7 @@ class Settings(BaseSettings):
     ai_vi_sell_premium: float = 0.30                     # sell when price > fair*(1+this)
     ai_noise_activity: float = 0.40                      # probability NT acts per tick
     ai_noise_max_qty: int = 3                            # max shares per noise trade
+    ai_gate_batch_size: int = 24  # gates refreshed by AI per tick
 
     # ── Event Settings ──
     event_probability: float = 0.10

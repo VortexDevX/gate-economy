@@ -4,9 +4,11 @@ export default function EmptyState({
   message?: string;
 }) {
   return (
-    <div className="text-sm text-center py-12 px-4 rounded-lg bg-gray-900 border border-gray-800 nm-soft-note">
-      {message}
+    <div className="game-empty-compact">
+      <Sparkles size={21} aria-hidden="true" />
+      <span>{message}</span>
     </div>
   );
 }
 
+import { Sparkles } from "lucide-react";

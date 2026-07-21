@@ -1,8 +1,11 @@
 """Gate-related request/response schemas."""
 
 import uuid
+from typing import Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+
+from app.services.instrument_identity import gate_display_name, gate_ticker
 
 
 class GateResponse(BaseModel):
@@ -19,6 +22,26 @@ class GateResponse(BaseModel):
     collapsed_at_tick: int | None
     discovery_type: str
     discoverer_id: uuid.UUID | None
+    ticker: str = ""
+    display_name: str = ""
+    effective_yield_micro: int = 0
+    yield_per_share_micro: int = 0
+
+    @model_validator(mode="after")
+    def derive_market_identity(self) -> Self:
+        self.ticker = gate_ticker(self.id, self.rank)
+        self.display_name = gate_display_name(self.id)
+        self.effective_yield_micro = (
+            int(self.base_yield_micro * (self.stability / 100.0))
+            if self.status == "ACTIVE"
+            else 0
+        )
+        self.yield_per_share_micro = (
+            self.effective_yield_micro // self.total_shares
+            if self.total_shares > 0
+            else 0
+        )
+        return self
 
     model_config = {"from_attributes": True}
 

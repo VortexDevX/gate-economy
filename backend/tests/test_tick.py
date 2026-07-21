@@ -1,7 +1,10 @@
+import uuid
+
 import pytest
 from sqlalchemy import delete, select
 
 from app.models.intent import Intent, IntentStatus, IntentType
+from app.models.market import AssetType, Order, OrderSide, OrderStatus, Trade
 from app.models.tick import Tick
 from app.simulation.state_hash import compute_state_hash
 from app.simulation.tick import execute_tick
@@ -109,3 +112,42 @@ async def test_state_hash_matches_recomputation(
         recomputed = await compute_state_hash(session)
 
     assert recomputed == tick.state_hash
+
+
+@pytest.mark.asyncio
+async def test_state_hash_ignores_closed_order_history_but_counts_trades(db):
+    """Closed order details are history; aggregate trade cardinality remains hashed."""
+    baseline = await compute_state_hash(db)
+    order = Order(
+        player_id=uuid.uuid4(),
+        asset_type=AssetType.GATE_SHARE,
+        asset_id=uuid.uuid4(),
+        side=OrderSide.SELL,
+        quantity=1,
+        price_limit_micro=1_000,
+        status=OrderStatus.CANCELLED,
+        created_at_tick=1,
+    )
+    db.add(order)
+    await db.flush()
+    assert await compute_state_hash(db) == baseline
+
+    trade = Trade(
+        buy_order_id=uuid.uuid4(),
+        sell_order_id=uuid.uuid4(),
+        asset_type=AssetType.GATE_SHARE,
+        asset_id=order.asset_id,
+        quantity=1,
+        price_micro=1_000,
+        buyer_fee_micro=0,
+        seller_fee_micro=0,
+        tick_id=1,
+    )
+    db.add(trade)
+    await db.flush()
+    with_trade = await compute_state_hash(db)
+    assert with_trade != baseline
+
+    trade.price_micro = 2_000
+    await db.flush()
+    assert await compute_state_hash(db) == with_trade
