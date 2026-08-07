@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import {
   ArrowRight,
   Coins,
+  CircleAlert,
   Compass,
   Gem,
   Landmark,
@@ -158,7 +159,7 @@ export default function RegisterPage() {
             {error && (
               <div id="register-error" className="auth-game-error" role="alert">
                 <span className="auth-game-error-mark" aria-hidden="true">
-                  !
+                  <CircleAlert size={18} />
                 </span>
                 <span>{error}</span>
               </div>

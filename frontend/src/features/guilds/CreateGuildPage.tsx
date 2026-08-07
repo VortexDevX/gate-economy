@@ -7,6 +7,7 @@ import {
   Clock3,
   Coins,
   Crown,
+  Flag,
   Landmark,
   Percent,
   Scale,
@@ -242,7 +243,7 @@ export default function CreateGuildPage() {
             detail="What this configuration means in plain language."
           />
           <div className="guild-forge-preview-banner border border-[var(--line)] bg-black/10 p-4">
-            <span className="game-eyebrow"><span className="game-eyebrow-rune" aria-hidden="true">◆</span> Proposed banner</span>
+            <span className="game-eyebrow"><Flag className="game-eyebrow-rune" size={13} aria-hidden="true" /> Proposed banner</span>
             <h2 className="mt-3 break-words text-xl uppercase">{name.trim() || "Unnamed Guild"}</h2>
           </div>
           <div className="guild-forge-preview-rules mt-3 grid gap-2" aria-label="Founding charter summary">

@@ -1,8 +1,30 @@
 # Dungeon Gate Economy UI Redesign
 
-**Direction:** The Obsidian Exchange  
-**Date:** 2026-07-18  
+**Direction:** Realm Sanctum (visual v2)
+
+**Date:** 2026-07-22
+
 **Scope:** Player-facing information architecture, interaction language, visual system, and state handling
+
+## Visual V2 — Realm Sanctum
+
+The first implementation improved clarity but still looked like a themed web
+dashboard: repeated rectangular panels, a permanent text sidebar, small labels,
+and no strong fantasy-world focal point. Visual v2 keeps the verified economy
+flow while replacing that presentation.
+
+- A project-owned cinematic gate environment anchors login and the Sanctum.
+- The desktop shell is now a top game HUD plus compact tool rail; mobile uses a
+  five-action dock and full-screen navigation drawer.
+- The home screen is an in-world sanctum with one active mission, real portfolio
+  state, and four large actions around the gate—not a grid of equal widgets.
+- Cyan rift light, indigo stone, violet magic, and small amber coin accents
+  replace the flat obsidian-and-brass treatment.
+- Decorative Cinzel is restricted to display text. Oxanium, Rajdhani, and
+  JetBrains Mono keep controls and economy data readable.
+- The art lives at `frontend/public/assets/gate-sanctum-v2.webp`; code-native
+  overlays, focus states, responsive layouts, and reduced-motion behavior remain
+  functional without inventing combat stats, levels, or equipment systems.
 
 ## Product Position
 

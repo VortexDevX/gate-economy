@@ -12,7 +12,10 @@ import "@fontsource/rajdhani/latin-600.css";
 import "@fontsource/rajdhani/latin-700.css";
 import "@fontsource/jetbrains-mono/latin-500.css";
 import "@fontsource/jetbrains-mono/latin-700.css";
+import "@fontsource/cinzel-decorative/latin-700.css";
+import "@fontsource/cinzel-decorative/latin-900.css";
 import "./index.css";
+import "./game-v2.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {

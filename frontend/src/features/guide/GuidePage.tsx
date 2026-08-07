@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Aperture,
   ArrowRight,
+  ChevronDown,
   Coins,
   Compass,
   Crown,
@@ -88,7 +89,7 @@ export default function GuidePage() {
         <div className="glossary-grid">
           {glossary.map(([term, definition]) => (
             <details key={term} className="glossary-item">
-              <summary>{term}<span aria-hidden="true">+</span></summary>
+              <summary>{term}<ChevronDown className="glossary-chevron" size={17} aria-hidden="true" /></summary>
               <p>{definition}</p>
             </details>
           ))}

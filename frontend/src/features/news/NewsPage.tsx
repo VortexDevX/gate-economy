@@ -212,7 +212,7 @@ function DispatchCard({ item }: { item: NewsResponse }) {
 function Importance({ value }: { value: number }) {
   const safeValue = Math.max(1, Math.min(5, value));
   return (
-    <span className="dispatch-importance" aria-label={`Importance ${safeValue} of 5`}>
+    <span className="dispatch-importance" role="img" aria-label={`Importance ${safeValue} of 5`}>
       {Array.from({ length: 5 }, (_, index) => (
         <span key={index} className={index < safeValue ? "is-lit" : ""} aria-hidden="true" />
       ))}

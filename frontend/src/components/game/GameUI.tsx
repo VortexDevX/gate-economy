@@ -37,7 +37,7 @@ export function ScreenHeader({
     <header className="game-screen-header">
       <div className="min-w-0">
         <div className="game-eyebrow">
-          <span className="game-eyebrow-rune" aria-hidden="true">◆</span>
+          <Sparkles className="game-eyebrow-rune" size={13} aria-hidden="true" />
           {eyebrow}
         </div>
         <h1 className="game-screen-title">{title}</h1>

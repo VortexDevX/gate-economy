@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   ArrowRightLeft,
   CalendarPlus,
   CalendarX,
@@ -383,7 +384,7 @@ export default function AdminPage() {
                   <span className="text-[var(--muted)]">{entry.tick_id == null ? "No cycle" : `Cycle ${entry.tick_id}`}</span>
                 </div>
                 <strong className="font-mono text-[var(--parchment-soft)]">
-                  {shortId(entry.debit_id)} <span className="tone-aether">→</span> {shortId(entry.credit_id)}
+                  {shortId(entry.debit_id)} <ArrowRight className="tone-aether inline-icon" size={13} aria-hidden="true" /> {shortId(entry.credit_id)}
                 </strong>
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[var(--muted)]">{plainLedgerName(entry.entry_type)}</span>
